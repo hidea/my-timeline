@@ -1,7 +1,7 @@
 import { McpClient, contentTexts } from '../lib/mcp.js';
-export async function collectBskylog({ from, to, limit, url }) {
+export async function collectBskylog({ from, to, limit, url, keyword = '' }) {
   const client = new McpClient(url); await client.initialize();
-  const result = await client.callTool('search_posts', { keyword: '', startDate: from.toISOString(), endDate: to.toISOString(), limit });
+  const result = await client.callTool('search_posts', { keyword, startDate: from.toISOString(), endDate: to.toISOString(), limit });
   return contentTexts(result).map(parsePost).filter(Boolean);
 }
 function parsePost(text) {

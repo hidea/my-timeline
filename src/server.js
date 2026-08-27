@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import { updateEnv } from './lib/env-file.js';
+import { exchangeGmailCode } from './collectors/gmail.js';
 
 const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const uiRoot = join(projectRoot, 'ui');
@@ -13,6 +14,7 @@ const host = '127.0.0.1';
 const requestedPort = Number(process.env.MY_TIMELINE_PORT ?? 4177);
 let job = null;
 let stravaState = null;
+let gmailState = null;
 const mime = new Map([['/', ['index.html', 'text/html; charset=utf-8']], ['/app.js', ['app.js', 'text/javascript; charset=utf-8']], ['/style.css', ['style.css', 'text/css; charset=utf-8']]]);
 
 const server = createServer(async (request, response) => {
@@ -37,6 +39,28 @@ const server = createServer(async (request, response) => {
     }
     if (request.method === 'GET' && request.url === '/api/status') { json(response, 200, job ?? { status: 'idle' }); return; }
     if (request.method === 'GET' && request.url === '/api/strava/status') { json(response, 200, { configured: Boolean(process.env.STRAVA_CLIENT_ID && process.env.STRAVA_CLIENT_SECRET), connected: Boolean(process.env.STRAVA_REFRESH_TOKEN) }); return; }
+    if (request.method === 'GET' && request.url === '/api/gmail/status') { json(response, 200, { configured: Boolean(process.env.GMAIL_CLIENT_ID && process.env.GMAIL_CLIENT_SECRET), connected: Boolean(process.env.GMAIL_REFRESH_TOKEN) }); return; }
+    if (request.method === 'POST' && request.url === '/api/gmail/config') {
+      const body = await readJson(request);
+      if (!String(body.clientId ?? '').trim() || !String(body.clientSecret ?? '').trim()) throw new Error('GmailのClient IDとClient Secretを入力してください。');
+      const updates = { GMAIL_CLIENT_ID: body.clientId.trim(), GMAIL_CLIENT_SECRET: body.clientSecret.trim() }; Object.assign(process.env, updates); await updateEnv(join(projectRoot, '.env'), updates);
+      json(response, 200, { configured: true, connected: Boolean(process.env.GMAIL_REFRESH_TOKEN) }); return;
+    }
+    if (request.method === 'GET' && request.url === '/api/gmail/connect') {
+      if (!process.env.GMAIL_CLIENT_ID || !process.env.GMAIL_CLIENT_SECRET) throw new Error('先にGmailのClient IDとClient Secretを保存してください。');
+      gmailState = randomBytes(24).toString('hex'); const redirectUri = `http://${host}:${server.address().port}/api/gmail/callback`;
+      const authorize = new URL('https://accounts.google.com/o/oauth2/v2/auth'); authorize.search = new URLSearchParams({ client_id: process.env.GMAIL_CLIENT_ID, redirect_uri: redirectUri, response_type: 'code', access_type: 'offline', prompt: 'consent', scope: 'https://www.googleapis.com/auth/gmail.readonly', state: gmailState });
+      response.writeHead(302, { location: authorize.toString() }); response.end(); return;
+    }
+    if (request.method === 'GET' && request.url.startsWith('/api/gmail/callback')) {
+      const callback = new URL(request.url, `http://${host}`);
+      if (!gmailState || callback.searchParams.get('state') !== gmailState) throw new Error('Gmail OAuthのstateが一致しません。');
+      if (callback.searchParams.get('error')) throw new Error('Gmailへの接続がキャンセルされました。');
+      const code = callback.searchParams.get('code'); if (!code) throw new Error('Googleから認証コードが返されませんでした。');
+      const tokens = await exchangeGmailCode({ code, clientId: process.env.GMAIL_CLIENT_ID, clientSecret: process.env.GMAIL_CLIENT_SECRET, redirectUri: `http://${host}:${server.address().port}/api/gmail/callback` }); gmailState = null;
+      process.env.GMAIL_REFRESH_TOKEN = tokens.refresh_token; await updateEnv(join(projectRoot, '.env'), { GMAIL_REFRESH_TOKEN: tokens.refresh_token });
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); response.end('<!doctype html><html lang="ja"><meta charset="utf-8"><title>Gmail接続完了</title><body><h1>Gmailに接続しました</h1><p>この画面を閉じてMy Timelineへ戻ってください。</p></body></html>'); return;
+    }
     if (request.method === 'POST' && request.url === '/api/strava/config') {
       const body = await readJson(request);
       if (!/^\d+$/.test(body.clientId ?? '') || !String(body.clientSecret ?? '').trim()) throw new Error('StravaのClient IDとClient Secretを入力してください。');
@@ -75,7 +99,11 @@ server.listen(requestedPort, host, () => {
 function validate(body) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(body.from) || !/^\d{4}-\d{2}-\d{2}$/.test(body.to)) throw new Error('開始日と終了日を指定してください。');
   if (!Array.isArray(body.sources) || !body.sources.length) throw new Error('取得元を1つ以上選んでください。');
-  if (body.sources.some(source => !['bluesky', 'x', 'flickr', 'strava'].includes(source))) throw new Error('不明な取得元です。');
+  if (body.sources.some(source => !['bluesky', 'x', 'flickr', 'strava', 'gmail'].includes(source))) throw new Error('不明な取得元です。');
+  if (body.relatedKeywords?.length) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(body.relatedFrom) || !/^\d{4}-\d{2}-\d{2}$/.test(body.relatedTo)) throw new Error('関連資料の検索期間を指定してください。');
+    if (body.relatedTo < body.relatedFrom) throw new Error('関連資料の終了日は開始日以降にしてください。');
+  }
 }
 
 function runMediaRepair(root, onProgress) {
@@ -93,6 +121,7 @@ async function exchangeStravaCode(code, redirectUri) {
 
 function runCollect(body, onProgress) {
   const args = ['--env-file-if-exists=.env', 'src/cli.js', 'collect', '--from', body.from, '--to', body.to, '--sources', body.sources.join(','), '--title', body.title || `${body.from}〜${body.to} 旅行記`];
+  if (body.relatedKeywords?.length) args.push('--related-from', body.relatedFrom, '--related-to', body.relatedTo, '--related-keywords', JSON.stringify(body.relatedKeywords));
   if (body.output) args.push('--output', body.output);
   return new Promise((resolve, reject) => {
     const childEnv = { ...process.env, MY_TIMELINE_PROGRESS: '1' };

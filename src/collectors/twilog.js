@@ -1,14 +1,14 @@
 import { McpClient, StdioMcpClient, contentTexts } from '../lib/mcp.js';
 import { shortId } from '../lib/utils.js';
 
-export async function collectTwilog({ fromText, toText, limit, url, token, toolName, bridgeCommand = 'npx' }) {
+export async function collectTwilog({ fromText, toText, limit, url, token, toolName, keyword = '', bridgeCommand = 'npx' }) {
   const client = token ? new McpClient(url, { token }) : new StdioMcpClient(bridgeCommand, ['-y', 'mcp-remote@0.1.37', url]);
   try {
     await client.initialize();
     const listed = await client.listTools();
     const tool = toolName ? listed.tools?.find(t => t.name === toolName) : chooseSearchTool(listed.tools ?? []);
     if (!tool) throw new Error(`No Twilog search tool found. Available: ${(listed.tools ?? []).map(t => t.name).join(', ')}`);
-    const baseArgs = buildArgs(tool.inputSchema, fromText, toText, limit), events = [];
+    const baseArgs = buildArgs(tool.inputSchema, fromText, toText, limit, keyword), events = [];
     let page = 1, maxPage = 1;
     do {
       const result = await client.callTool(tool.name, { ...baseArgs, ...(tool.inputSchema?.properties?.page ? { page } : {}) });
@@ -19,7 +19,7 @@ export async function collectTwilog({ fromText, toText, limit, url, token, toolN
   } finally { client.close?.(); }
 }
 function chooseSearchTool(tools) { return tools.find(t => /search|timeline|post|tweet/i.test(`${t.name} ${t.description ?? ''}`) && /startDate|start_date/.test(JSON.stringify(t.inputSchema ?? {}))); }
-function buildArgs(schema, from, to, limit) {
+function buildArgs(schema, from, to, limit, keyword = '') {
   const args = {}, props = schema?.properties ?? {};
   for (const key of Object.keys(props)) {
     if (/^start_?date$/i.test(key)) args[key] = from.replaceAll('-', '');
@@ -27,7 +27,7 @@ function buildArgs(schema, from, to, limit) {
     else if (/timeline_?filter/i.test(key)) args[key] = props[key]?.type === 'array' ? ['tweets'] : 'tweets';
     else if (/include_?retweet/i.test(key)) args[key] = false;
     else if (/limit|count|max/i.test(key)) args[key] = limit;
-    else if (/keyword/i.test(key)) args[key] = props[key]?.type === 'array' ? [] : '';
+    else if (/keyword/i.test(key)) args[key] = props[key]?.type === 'array' ? (keyword ? [keyword] : []) : keyword;
   }
   return args;
 }

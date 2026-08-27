@@ -5,7 +5,8 @@
 <form id="collect-form" action="/api/collect" method="post">
   <div class="dates"><div class="field"><label for="from">開始日</label><input id="from" name="from" type="date" required></div><div class="field"><label for="to">終了日</label><input id="to" name="to" type="date" required></div></div>
   <div class="field"><label for="title">旅行記の名前</label><input id="title" name="title" type="text" maxlength="80" placeholder="例：瀬戸内自転車旅行"></div>
-  <fieldset><legend>取得元</legend><div class="sources"><label for="bluesky"><input id="bluesky" name="sources" type="checkbox" value="bluesky" checked><span>Bluesky</span></label><label for="x"><input id="x" name="sources" type="checkbox" value="x" checked><span>Twilog</span></label><label for="flickr"><input id="flickr" name="sources" type="checkbox" value="flickr" checked><span>Flickr</span></label><label for="strava"><input id="strava" name="sources" type="checkbox" value="strava"><span>Strava</span></label></div></fieldset>
+  <fieldset><legend>取得元</legend><div class="sources"><label for="bluesky"><input id="bluesky" name="sources" type="checkbox" value="bluesky" checked><span>Bluesky</span></label><label for="x"><input id="x" name="sources" type="checkbox" value="x" checked><span>Twilog</span></label><label for="flickr"><input id="flickr" name="sources" type="checkbox" value="flickr" checked><span>Flickr</span></label><label for="strava"><input id="strava" name="sources" type="checkbox" value="strava"><span>Strava</span></label><label for="gmail"><input id="gmail" name="sources" type="checkbox" value="gmail"><span>Gmail</span></label></div></fieldset>
+  <details class="related-search"><summary>期間外の関連資料も探す</summary><p id="related-help" class="hint">Bluesky・Twilog・Gmailから、指定期間内でキーワードを含む項目を追加します。1行に1語入力してください。</p><div class="dates"><div class="field"><label for="related-from">検索開始日</label><input id="related-from" name="relatedFrom" type="date"></div><div class="field"><label for="related-to">検索終了日</label><input id="related-to" name="relatedTo" type="date"></div></div><div class="field"><label for="related-keywords">関連キーワード</label><textarea id="related-keywords" name="relatedKeywords" rows="4" maxlength="1000" aria-describedby="related-help" placeholder="ホテル名&#10;イベント名&#10;目的地名"></textarea></div></details>
   <p class="hint">最大31日。作成物は「ダウンロード」に保存されます。執筆が終わったらFinderから削除できます。</p><button id="submit" type="submit">収集して開く</button>
 </form>
 <details class="settings"><summary>Strava設定 <span id="strava-status">未確認</span></summary>
@@ -20,5 +21,29 @@
   </form>
   <a id="strava-connect" class="connect" href="/api/strava/connect" target="_blank">Stravaに接続</a>
   <p id="strava-message" aria-live="polite"></p>
+</details>
+<details class="settings"><summary>Gmail設定 <span id="gmail-status">未確認</span></summary>
+  <p class="hint">Google CloudでGmail APIを有効にし、OAuthクライアントを作成します。承認済みリダイレクトURIは <code>http://127.0.0.1:4177/api/gmail/callback</code> です。権限は読み取り専用です。</p>
+  <details class="setup-guide"><summary>Google Cloudでの設定手順</summary>
+    <ol>
+      <li><a href="https://console.cloud.google.com/" target="_blank" rel="noreferrer">Google Cloud Console</a>を開き、<strong>My Timeline</strong>などの名前でプロジェクトを作成します。</li>
+      <li>「APIとサービス」→「ライブラリ」で<strong>Gmail API</strong>を検索し、有効にします。</li>
+      <li>「Google Auth Platform」→「Branding」で、アプリ名、サポートメール、連絡先を設定します。通常、対象は「外部」です。</li>
+      <li>「Audience」→「Test users」に、自分のGmailアドレスを追加します。</li>
+      <li>「Data Access」で、読み取り専用スコープ <code>https://www.googleapis.com/auth/gmail.readonly</code> を追加します。</li>
+      <li>「Clients」→「Create client」を開き、種類に<strong>ウェブ アプリケーション</strong>を選びます。</li>
+      <li>「承認済みのリダイレクトURI」に <code>http://127.0.0.1:4177/api/gmail/callback</code> を正確に登録します。「承認済みのJavaScript生成元」は空欄で構いません。</li>
+      <li>作成後に表示されるClient IDとClient Secretを下の欄へ入力し、「設定を保存」→「Gmailに接続」の順に押します。</li>
+      <li>未確認アプリの警告が出た場合は「詳細」から、自分で作成したMy Timelineへ進み、読み取りを許可します。</li>
+    </ol>
+    <p class="hint">テストモードでは認証が後日失効し、Gmailへの再接続が必要になる場合があります。</p>
+  </details>
+  <form id="gmail-form" action="/api/gmail/config" method="post">
+    <div class="field"><label for="gmail-client-id">Client ID</label><input id="gmail-client-id" name="clientId" type="text" required autocomplete="off"></div>
+    <div class="field"><label for="gmail-client-secret">Client Secret</label><input id="gmail-client-secret" name="clientSecret" type="password" required autocomplete="off"></div>
+    <button type="submit">設定を保存</button>
+  </form>
+  <a id="gmail-connect" class="connect" href="/api/gmail/connect" target="_blank">Gmailに接続</a>
+  <p id="gmail-message" aria-live="polite"></p>
 </details>
 <section id="result" class="result" aria-live="polite" aria-atomic="true" hidden><p id="status-text"></p><progress id="progress" hidden></progress><p id="elapsed"></p></section></main></body></html>
