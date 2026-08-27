@@ -1,0 +1,1 @@
+{"name":"my-timeline","version":"0.1.0","private":true,"type":"module","bin":{"my-timeline":"src/cli.js"},"scripts":{"start":"node --env-file-if-exists=.env src/server.js","test":"node --test","check":"node --check src/cli.js && node --check src/server.js && node --check src/repair-media.js && node --check ui/app.js"},"engines":{"node":">=22"}}
