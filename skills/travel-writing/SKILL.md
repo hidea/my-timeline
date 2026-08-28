@@ -1,16 +1,16 @@
 ---
 name: travel-writing
-description: Collect a trip's Bluesky, X/Twilog, and Flickr records for a date range, reconstruct an evidence-backed itinerary, select photos, and draft a Japanese travelogue. Use for travel writing or trip recollection; not for maintaining a permanent personal archive.
+description: Collect an event's Bluesky, X/Twilog, and Flickr records for a date range, reconstruct an evidence-backed chronology, select photos, and draft a Japanese event record. Use for event writing or recollection; not for maintaining a permanent personal archive.
 ---
 
 # Travel Writing
 
-Create a disposable, evidence-backed writing workspace with this repository's `my-timeline` CLI. Keep only the final article and selected images when the user finishes.
+Create a disposable, evidence-backed event-writing workspace with this repository's `my-timeline` CLI. Keep only the final article and selected images when the user finishes.
 
 ## Workflow
 
-1. Determine the trip title and inclusive start/end dates. Ask only when these cannot be inferred safely. The range must not exceed 31 days.
-2. Run `node src/cli.js collect --from YYYY-MM-DD --to YYYY-MM-DD --title "旅行名"`. Omit unavailable sources with `--sources`. Never print access tokens.
+1. Determine the event title and inclusive start/end dates. Ask only when these cannot be inferred safely. The range must not exceed 31 days.
+2. Run `node src/cli.js collect --from YYYY-MM-DD --to YYYY-MM-DD --title "行事名"`. Omit unavailable sources with `--sources`. Never print access tokens.
 3. Tell the user the workspace path and point them to `timeline.html` and `materials/`. Let them copy chosen images into `selected/`.
 4. Reconstruct `itinerary.md`. Every asserted stop or event must cite one or more relative material paths. Mark plausible but unverified transitions as questions, not facts.
 5. Prepare `outline.md`, then draft `draft.md` after the user confirms the itinerary and selections. Use relative image links.

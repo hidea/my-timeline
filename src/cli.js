@@ -21,20 +21,22 @@ async function collect(argv) {
   if (sources.includes('x')) tasks.push(tracked('Twilog', collectTwilog({ fromText: a.from, toText: a.to, limit, url: a['twilog-url'] ?? process.env.TWILOG_MCP_URL ?? 'https://twilog-mcp.togetter.dev/mcp', token: process.env.TWILOG_MCP_TOKEN, toolName: a['twilog-tool'], bridgeCommand: process.env.MCP_REMOTE_COMMAND ?? 'npx' })));
   if (sources.includes('flickr')) tasks.push(tracked('Flickr', collectFlickr({ fromText: a.from, toText: a.to, limit, apiKey: process.env.FLICKR_API_KEY, apiSecret: process.env.FLICKR_API_SECRET, oauthToken: process.env.FLICKR_OAUTH_TOKEN, oauthTokenSecret: process.env.FLICKR_OAUTH_TOKEN_SECRET, userId: process.env.FLICKR_USER_ID })));
   if (sources.includes('strava')) tasks.push(tracked('Strava', collectStrava({ from, to, clientId: process.env.STRAVA_CLIENT_ID, clientSecret: process.env.STRAVA_CLIENT_SECRET, refreshToken: process.env.STRAVA_REFRESH_TOKEN, accessToken: process.env.STRAVA_ACCESS_TOKEN, expiresAt: process.env.STRAVA_EXPIRES_AT })));
-  if (sources.includes('gmail')) tasks.push(tracked('Gmail', collectGmail({ fromText: a.from, toText: a.to, limit, clientId: process.env.GMAIL_CLIENT_ID, clientSecret: process.env.GMAIL_CLIENT_SECRET, refreshToken: process.env.GMAIL_REFRESH_TOKEN })));
+  if (sources.includes('gmail')) {
+    if (!keywords.length) throw new Error('Gmailを取得するには関連キーワードを入力してください。');
+    tasks.push(tracked('Gmail（キーワード）', collectGmail({ limit, keywords, clientId: process.env.GMAIL_CLIENT_ID, clientSecret: process.env.GMAIL_CLIENT_SECRET, refreshToken: process.env.GMAIL_REFRESH_TOKEN })));
+  }
   if (keywords.length && a['related-from'] && a['related-to']) {
     const relatedFrom = parseDate(a['related-from']), relatedTo = parseDate(a['related-to'], true);
     if (relatedTo < relatedFrom) throw new Error('関連資料の終了日は開始日以降にしてください。');
     if (sources.includes('bluesky')) tasks.push(tracked('Bluesky関連', markRelated(collectKeywordMatches(keywords, keyword => collectBskylog({ from: relatedFrom, to: relatedTo, limit, keyword, url: a['bskylog-url'] ?? process.env.BSKYLOG_MCP_URL ?? 'http://localhost:8080/sse' })), from, to)));
     if (sources.includes('x')) tasks.push(tracked('Twilog関連', markRelated(collectKeywordMatches(keywords, keyword => collectTwilog({ fromText: a['related-from'], toText: a['related-to'], limit, keyword, url: a['twilog-url'] ?? process.env.TWILOG_MCP_URL ?? 'https://twilog-mcp.togetter.dev/mcp', token: process.env.TWILOG_MCP_TOKEN, toolName: a['twilog-tool'], bridgeCommand: process.env.MCP_REMOTE_COMMAND ?? 'npx' })), from, to)));
-    if (sources.includes('gmail')) tasks.push(tracked('Gmail関連', markRelated(collectGmail({ fromText: a['related-from'], toText: a['related-to'], limit, keywords, clientId: process.env.GMAIL_CLIENT_ID, clientSecret: process.env.GMAIL_CLIENT_SECRET, refreshToken: process.env.GMAIL_REFRESH_TOKEN }), from, to)));
   }
   const settled = await Promise.allSettled(tasks), events = [], failures = [];
   for (const result of settled) result.status === 'fulfilled' ? events.push(...result.value) : failures.push(result.reason.message);
   if (!events.length && failures.length) throw new Error(failures.join('\n'));
   const uniqueEvents = deduplicate(events); enrichStravaPositions(uniqueEvents.filter(event => !event.related));
   progress(`取得完了。${uniqueEvents.length}件の素材を書き出します`, 0, uniqueEvents.length);
-  const root = await createWorkspace({ output: a.output, title: a.title ?? `${a.from}〜${a.to} 旅行記`, fromText: a.from, toText: a.to, events: uniqueEvents, keepRemote: Boolean(a['keep-remote']), onProgress: (done, total, message) => progress(`${message} (${done}/${total})`, done, total) });
+  const root = await createWorkspace({ output: a.output, title: a.title ?? `${a.from}〜${a.to} 行事記録`, fromText: a.from, toText: a.to, events: uniqueEvents, keepRemote: Boolean(a['keep-remote']), onProgress: (done, total, message) => progress(`${message} (${done}/${total})`, done, total) });
   console.log(root); if (failures.length) console.error(`Warnings:\n- ${failures.join('\n- ')}`);
 }
 async function tracked(name, promise) { progress(`${name}から取得しています`); const events = await promise; progress(`${name}: ${events.length}件取得`); return events; }

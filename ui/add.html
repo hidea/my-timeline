@@ -8,7 +8,7 @@
   <script src="/add.js" defer></script>
 </head>
 <body><main>
-  <p class="eyebrow">MY TIMELINE</p><h1>素材を追加</h1>
+  <p class="eyebrow">MY TIMELINE</p><button id="back-to-timeline" type="button">← タイムラインに戻る</button><h1>素材を追加</h1>
   <p class="intro">日時を指定して、収集済みのタイムラインへ差し込みます。</p>
   <form id="manual-form" action="/api/manual-material" method="post">
     <div class="field"><label for="occurred-at">日時</label><input id="occurred-at" name="occurredAt" type="datetime-local" required></div>
@@ -42,8 +42,9 @@
         <label><input name="sources" type="checkbox" value="strava"><span>Strava</span></label>
         <label><input name="sources" type="checkbox" value="flickr"><span>Flickr</span></label>
       </div></fieldset>
-      <div class="dates"><div class="field"><label for="gmail-related-from">関連検索の開始日</label><input id="gmail-related-from" name="relatedFrom" type="date"></div><div class="field"><label for="gmail-related-to">関連検索の終了日</label><input id="gmail-related-to" name="relatedTo" type="date"></div></div>
-      <div class="field"><label for="gmail-keywords">期間外の関連キーワード</label><textarea id="gmail-keywords" name="keywords" rows="4" placeholder="ホテル名&#10;イベント名&#10;目的地名"></textarea></div>
+      <p class="hint">Gmailは日付に関係なくキーワード一致だけを取得します。下の日付はBluesky・Twilogの期間外検索にだけ使います。</p>
+      <div class="dates"><div class="field"><label for="gmail-related-from">Bluesky・Twilogの検索開始日</label><input id="gmail-related-from" name="relatedFrom" type="date"></div><div class="field"><label for="gmail-related-to">Bluesky・Twilogの検索終了日</label><input id="gmail-related-to" name="relatedTo" type="date"></div></div>
+      <div class="field"><label for="gmail-keywords">検索キーワード（Gmailでは必須）</label><textarea id="gmail-keywords" name="keywords" rows="4" placeholder="ホテル名&#10;イベント名&#10;目的地名"></textarea></div>
       <button id="append-gmail" type="submit">選んだ取得元から追加</button>
     </form>
   </details>

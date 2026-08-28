@@ -14,7 +14,7 @@ export async function importEmlFiles(root, inputFiles) {
     if (!occurredAt) throw new Error(`${file.name} の送信日時を読み取れませんでした。`);
     const headers = [`件名: ${mail.subject || '（件名なし）'}`, mail.from?.text ? `差出人: ${mail.from.text}` : '', mail.to?.text ? `宛先: ${mail.to.text}` : '', mail.cc?.text ? `Cc: ${mail.cc.text}` : ''].filter(Boolean);
     const attachments = mail.attachments.map((attachment, index) => ({ name: attachment.filename || `添付ファイル-${index + 1}`, type: attachment.contentType || 'application/octet-stream', data: attachment.content.toString('base64') }));
-    timeline = await addManualMaterial(root, { source: 'gmail', occurredAt: occurredAt.toISOString(), text: `${headers.join('\n')}\n\n${String(mail.text ?? '').trim()}`.trim(), files: [{ name: file.name, type: 'message/rfc822', data: raw.toString('base64') }, ...attachments] });
+    timeline = await addManualMaterial(root, { source: 'eml', occurredAt: occurredAt.toISOString(), text: `${headers.join('\n')}\n\n${String(mail.text ?? '').trim()}`.trim(), files: [{ name: file.name, type: 'message/rfc822', data: raw.toString('base64') }, ...attachments] });
   }
   return { imported: files.length, timeline };
 }

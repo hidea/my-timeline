@@ -12,7 +12,7 @@ export async function addManualMaterial(root, input) {
   if (!basename(root).startsWith('My Timeline ')) throw new Error('My Timelineの出力フォルダではありません。');
   const occurredAt = new Date(String(input.occurredAt).match(/[zZ]|[+-]\d\d:?\d\d$/) ? input.occurredAt : `${input.occurredAt}:00+09:00`);
   if (Number.isNaN(occurredAt.valueOf())) throw new Error('日時を指定してください。');
-  const source = ['memo', 'place', 'gmail'].includes(input.source) ? input.source : 'memo', id = randomUUID(), base = `${timestampName(occurredAt)}_${source}_${id.slice(0, 10)}`;
+  const source = ['memo', 'place', 'eml'].includes(input.source) ? input.source : 'memo', id = randomUUID(), base = `${timestampName(occurredAt)}_${source}_${id.slice(0, 10)}`;
   await mkdir(join(root, 'materials'), { recursive: true }); await mkdir(join(root, '.timeline-cache'), { recursive: true });
   const files = [], previews = [], attachments = [];
   for (const [index, file] of (input.files ?? []).slice(0, 50).entries()) {

@@ -11,7 +11,7 @@ import { updateEnv } from './lib/env-file.js';
 import { exchangeGmailCode } from './collectors/gmail.js';
 import { addManualMaterial } from './manual-material.js';
 import { appendSources } from './append-sources.js';
-import { deleteTimelineEvent, eventInfo } from './delete-event.js';
+import { bulkDeleteInfo, deleteTimelineEvent, deleteTimelineEvents, eventInfo } from './delete-event.js';
 import { importEmlFiles } from './import-eml.js';
 
 const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -21,7 +21,8 @@ const requestedPort = Number(process.env.MY_TIMELINE_PORT ?? 4177);
 let job = null;
 let stravaState = null;
 let gmailState = null;
-const mime = new Map([['/', ['index.html', 'text/html; charset=utf-8']], ['/app.js', ['app.js', 'text/javascript; charset=utf-8']], ['/add.js', ['add.js', 'text/javascript; charset=utf-8']], ['/delete.js', ['delete.js', 'text/javascript; charset=utf-8']], ['/style.css', ['style.css', 'text/css; charset=utf-8']]]);
+const pendingDeletes = new Map();
+const mime = new Map([['/', ['index.html', 'text/html; charset=utf-8']], ['/app.js', ['app.js', 'text/javascript; charset=utf-8']], ['/add.js', ['add.js', 'text/javascript; charset=utf-8']], ['/delete.js', ['delete.js', 'text/javascript; charset=utf-8']], ['/delete-bulk.js', ['delete-bulk.js', 'text/javascript; charset=utf-8']], ['/style.css', ['style.css', 'text/css; charset=utf-8']]]);
 
 const server = createServer(async (request, response) => {
   try {
@@ -32,6 +33,8 @@ const server = createServer(async (request, response) => {
     }
     if (request.method === 'GET' && request.url.startsWith('/add?')) { response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); response.end(await readFile(join(uiRoot, 'add.html'))); return; }
     if (request.method === 'GET' && request.url.startsWith('/delete?')) { response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); response.end(await readFile(join(uiRoot, 'delete.html'))); return; }
+    if (request.method === 'GET' && request.url.startsWith('/delete-bulk?')) { response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); response.end(await readFile(join(uiRoot, 'delete-bulk.html'))); return; }
+    if (request.method === 'POST' && request.url === '/delete-bulk') { const body = await readForm(request, 2 * 1024 * 1024), root = workspaceRoot(body.root), ids = JSON.parse(body.ids ?? '[]'); if (!Array.isArray(ids) || !ids.length) throw new Error('削除するカードを選択してください。'); const token = randomBytes(24).toString('hex'); pendingDeletes.set(token, { root, ids, createdAt: Date.now() }); response.writeHead(303, { location: `/delete-bulk?token=${token}` }); response.end(); return; }
     if (request.method === 'POST' && request.url === '/api/manual-material') {
       const body = await readJson(request, 100 * 1024 * 1024), root = resolve(String(body.root ?? '')), downloads = resolve(homedir(), 'Downloads'), pathFromDownloads = relative(downloads, root);
       if (!root || pathFromDownloads.startsWith('..') || pathFromDownloads.includes('../')) throw new Error('追加先が不正です。');
@@ -41,11 +44,14 @@ const server = createServer(async (request, response) => {
       const body = await readJson(request, 150 * 1024 * 1024), root = workspaceRoot(body.root);
       const result = await importEmlFiles(root, body.files); await open(result.timeline); json(response, 200, result); return;
     }
+    if (request.method === 'POST' && request.url === '/api/open-timeline') { const body = await readJson(request), root = workspaceRoot(body.root); await open(join(root, 'timeline.html')); json(response, 200, { opened: true }); return; }
     if (request.method === 'GET' && request.url.startsWith('/api/workspace-info?')) {
       const root = workspaceRoot(new URL(request.url, `http://${host}`).searchParams.get('root')), manifest = JSON.parse(await readFile(join(root, 'manifest.json'), 'utf8')); json(response, 200, { title: manifest.title, from: manifest.from, to: manifest.to }); return;
     }
     if (request.method === 'GET' && request.url.startsWith('/api/event-info?')) { const url = new URL(request.url, `http://${host}`), root = workspaceRoot(url.searchParams.get('root')); json(response, 200, await eventInfo(root, url.searchParams.get('source'), url.searchParams.get('sourceId'))); return; }
     if (request.method === 'POST' && request.url === '/api/delete-event') { const body = await readJson(request), root = workspaceRoot(body.root), result = await deleteTimelineEvent(root, body.source, body.sourceId); await open(result.timeline); json(response, 200, { deleted: true }); return; }
+    if (request.method === 'GET' && request.url.startsWith('/api/bulk-delete-info?')) { const token = new URL(request.url, `http://${host}`).searchParams.get('token'), pending = pendingDeletes.get(token); if (!pending || Date.now() - pending.createdAt > 30 * 60_000) throw new Error('一括削除の確認期限が切れました。タイムラインから選択し直してください。'); json(response, 200, await bulkDeleteInfo(pending.root, pending.ids)); return; }
+    if (request.method === 'POST' && request.url === '/api/delete-events') { const body = await readJson(request), pending = pendingDeletes.get(body.token); if (!pending || Date.now() - pending.createdAt > 30 * 60_000) throw new Error('一括削除の確認期限が切れました。'); const result = await deleteTimelineEvents(pending.root, pending.ids); pendingDeletes.delete(body.token); await open(result.timeline); json(response, 200, { deleted: result.deleted }); return; }
     if (request.method === 'POST' && request.url === '/api/append-sources') {
       const body = await readJson(request), root = workspaceRoot(body.root), manifest = JSON.parse(await readFile(join(root, 'manifest.json'), 'utf8'));
       if (!Array.isArray(body.sources) || !body.sources.length || body.sources.some(source => !['bluesky', 'x', 'flickr', 'strava', 'gmail'].includes(source))) throw new Error('追加する取得元を選んでください。');
@@ -127,7 +133,8 @@ function validate(body) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(body.from) || !/^\d{4}-\d{2}-\d{2}$/.test(body.to)) throw new Error('開始日と終了日を指定してください。');
   if (!Array.isArray(body.sources) || !body.sources.length) throw new Error('取得元を1つ以上選んでください。');
   if (body.sources.some(source => !['bluesky', 'x', 'flickr', 'strava', 'gmail'].includes(source))) throw new Error('不明な取得元です。');
-  if (body.relatedKeywords?.length) {
+  if (body.sources.includes('gmail') && !body.relatedKeywords?.length) throw new Error('Gmailを取得するには検索キーワードを入力してください。');
+  if (body.relatedKeywords?.length && body.sources.some(source => ['bluesky', 'x'].includes(source))) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(body.relatedFrom) || !/^\d{4}-\d{2}-\d{2}$/.test(body.relatedTo)) throw new Error('関連資料の検索期間を指定してください。');
     if (body.relatedTo < body.relatedFrom) throw new Error('関連資料の終了日は開始日以降にしてください。');
   }
@@ -147,7 +154,7 @@ async function exchangeStravaCode(code, redirectUri) {
 }
 
 function runCollect(body, onProgress) {
-  const args = ['--env-file-if-exists=.env', 'src/cli.js', 'collect', '--from', body.from, '--to', body.to, '--sources', body.sources.join(','), '--title', body.title || `${body.from}〜${body.to} 旅行記`];
+  const args = ['--env-file-if-exists=.env', 'src/cli.js', 'collect', '--from', body.from, '--to', body.to, '--sources', body.sources.join(','), '--title', body.title || `${body.from}〜${body.to} 行事記録`];
   if (body.relatedKeywords?.length) args.push('--related-from', body.relatedFrom, '--related-to', body.relatedTo, '--related-keywords', JSON.stringify(body.relatedKeywords));
   if (body.output) args.push('--output', body.output);
   return new Promise((resolve, reject) => {
@@ -172,5 +179,6 @@ function runCollect(body, onProgress) {
 
 function open(target) { return new Promise((resolve, reject) => { const child = spawn('open', [target], { stdio: 'ignore' }); child.on('error', reject); child.on('close', code => code === 0 ? resolve() : reject(new Error(`${target} を開けませんでした。`))); }); }
 async function readJson(request, limit = 16_384) { let raw = ''; for await (const chunk of request) { raw += chunk; if (raw.length > limit) throw new Error('入力が大きすぎます。'); } return JSON.parse(raw || '{}'); }
+async function readForm(request, limit = 16_384) { let raw = ''; for await (const chunk of request) { raw += chunk; if (raw.length > limit) throw new Error('入力が大きすぎます。'); } return Object.fromEntries(new URLSearchParams(raw)); }
 function workspaceRoot(value) { const root = resolve(String(value ?? '')), downloads = resolve(homedir(), 'Downloads'), pathFromDownloads = relative(downloads, root); if (!root || pathFromDownloads.startsWith('..') || pathFromDownloads.includes('../')) throw new Error('追加先が不正です。'); return root; }
 function json(response, status, value) { response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }); response.end(JSON.stringify(value)); }

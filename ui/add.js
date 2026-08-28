@@ -1,8 +1,10 @@
 const form = document.querySelector('#manual-form'), result = document.querySelector('#manual-result'), save = document.querySelector('#save-material'), occurredAt = document.querySelector('#occurred-at');
 const gmailForm = document.querySelector('#gmail-append-form'), gmailButton = document.querySelector('#append-gmail'), root = new URLSearchParams(location.search).get('root');
 const emlForm = document.querySelector('#eml-form'), emlButton = document.querySelector('#import-eml');
+const backButton = document.querySelector('#back-to-timeline');
 const now = new Date(Date.now() - new Date().getTimezoneOffset() * 60_000); occurredAt.value = now.toISOString().slice(0, 16);
 document.querySelector('#current-location').addEventListener('click', () => navigator.geolocation.getCurrentPosition(position => { form.latitude.value = position.coords.latitude; form.longitude.value = position.coords.longitude; }, error => show(`現在地を取得できませんでした: ${error.message}`, true)));
+backButton.addEventListener('click', async () => { backButton.disabled = true; try { const response = await fetch('/api/open-timeline', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ root }) }), body = await response.json(); if (!response.ok) throw new Error(body.error || 'タイムラインを開けませんでした。'); } catch (error) { show(error.message, true); } finally { backButton.disabled = false; } });
 form.addEventListener('submit', async event => {
   event.preventDefault(); const files = [...form.files.files]; if (files.length > 10) return show('写真は10枚までです。', true); save.disabled = true; save.textContent = '保存しています…'; show('写真を読み込み、タイムラインを更新しています');
   try {
@@ -22,10 +24,10 @@ emlForm.addEventListener('submit', async event => {
   } catch (error) { show(error.message, true); } finally { emlButton.disabled = false; emlButton.textContent = 'EMLをタイムラインに追加'; }
 });
 gmailForm.addEventListener('submit', async event => {
-  event.preventDefault(); const sources = [...gmailForm.querySelectorAll('input[name="sources"]:checked')].map(input => input.value); if (!sources.length) return show('追加する取得元を選んでください。', true); gmailButton.disabled = true; gmailButton.textContent = '取得しています…'; show(`${sources.join('、')}から新しい項目を取得しています。保存済み素材は再取得しません。`);
+  event.preventDefault(); const sources = [...gmailForm.querySelectorAll('input[name="sources"]:checked')].map(input => input.value); if (!sources.length) return show('追加する取得元を選んでください。', true); const keywords = String(gmailForm.keywords.value ?? '').split(/\n/).map(value => value.trim()).filter(Boolean); if (sources.includes('gmail') && !keywords.length) return show('Gmailを追加するには検索キーワードを入力してください。', true); gmailButton.disabled = true; gmailButton.textContent = '取得しています…'; show(`${sources.join('、')}から新しい項目を取得しています。保存済み素材は再取得しません。`);
   try {
-    const values = Object.fromEntries(new FormData(gmailForm)); values.root = root; values.sources = sources; values.keywords = String(values.keywords ?? '').split(/\n/).map(value => value.trim()).filter(Boolean);
-    const response = await fetch('/api/append-sources', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(values) }), body = await response.json(); if (!response.ok) throw new Error(body.error || '追加できませんでした。'); const details = (body.breakdown ?? []).map(item => `${item.source} ${item.total}件${item.related ? `（期間外 ${item.related}件）` : ''}`).join('、'); show(`${body.added}件追加しました${details ? `：${details}` : ''}。更新したタイムラインを開きます。${body.warnings?.length ? `\n警告: ${body.warnings.join(' / ')}` : ''}`);
+    const values = Object.fromEntries(new FormData(gmailForm)); values.root = root; values.sources = sources; values.keywords = keywords;
+    const response = await fetch('/api/append-sources', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(values) }), body = await response.json(); if (!response.ok) throw new Error(body.error || '追加できませんでした。'); const details = (body.breakdown ?? []).map(item => `${item.source} ${item.total}件${item.related ? `（期間外 ${item.related}件）` : ''}`).join('、'), repaired = body.repaired ? `、未保存画像 ${body.repaired}件を再取得` : ''; show(`${body.added}件追加${repaired}しました${details ? `：${details}` : ''}。更新したタイムラインを開きます。${body.warnings?.length ? `\n警告: ${body.warnings.join(' / ')}` : ''}`);
   } catch (error) { show(error.message, true); } finally { gmailButton.disabled = false; gmailButton.textContent = '選んだ取得元から追加'; }
 });
 fetch(`/api/workspace-info?root=${encodeURIComponent(root)}`).then(response => response.json()).then(info => { document.title = `${info.title}へ素材を追加 | My Timeline`; const from = new Date(`${info.from}T00:00:00`); from.setFullYear(from.getFullYear() - 1); gmailForm.relatedFrom.value = from.toISOString().slice(0, 10); gmailForm.relatedTo.value = info.to; }).catch(() => {});

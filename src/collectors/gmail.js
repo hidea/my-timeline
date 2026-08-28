@@ -43,10 +43,11 @@ async function gmailFetch(url, token) {
   if (!response.ok) throw new Error(`Gmail APIの取得に失敗しました (${response.status})。`); return response;
 }
 
-function gmailQuery(from, to, keywords) {
+export function gmailQuery(from, to, keywords) {
+  const terms = keywords.map(keyword => `"${String(keyword).replaceAll('"', '')}"`).join(' ');
+  if (!from || !to) return terms ? `{${terms}}` : '';
   const next = new Date(`${to}T00:00:00+09:00`); next.setDate(next.getDate() + 1);
   const end = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Tokyo' }).format(next).replaceAll('-', '/');
-  const terms = keywords.map(keyword => `"${String(keyword).replaceAll('"', '')}"`).join(' ');
   return `after:${from.replaceAll('-', '/')} before:${end}${terms ? ` {${terms}}` : ''}`;
 }
 function extractText(part) {
