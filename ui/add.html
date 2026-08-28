@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>素材を追加 | My Timeline</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/add.js" defer></script>
+</head>
+<body><main>
+  <p class="eyebrow">MY TIMELINE</p><h1>素材を追加</h1>
+  <p class="intro">日時を指定して、収集済みのタイムラインへ差し込みます。</p>
+  <form id="manual-form" action="/api/manual-material" method="post">
+    <div class="field"><label for="occurred-at">日時</label><input id="occurred-at" name="occurredAt" type="datetime-local" required></div>
+    <fieldset><legend>種類</legend><div class="sources">
+      <label><input name="source" type="radio" value="memo" checked><span>メモ</span></label>
+      <label><input name="source" type="radio" value="place"><span>場所</span></label>
+    </div></fieldset>
+    <div class="field"><label for="manual-text">本文</label><textarea id="manual-text" name="text" rows="7"></textarea></div>
+    <div class="field"><label for="manual-url">関連URL</label><input id="manual-url" name="url" type="url" inputmode="url"></div>
+    <fieldset><legend>位置情報（任意）</legend><div class="dates">
+      <div class="field"><label for="latitude">緯度</label><input id="latitude" name="latitude" type="text" inputmode="decimal"></div>
+      <div class="field"><label for="longitude">経度</label><input id="longitude" name="longitude" type="text" inputmode="decimal"></div>
+    </div><button id="current-location" type="button">現在地を入力</button></fieldset>
+    <div class="field"><label for="manual-files">写真（最大10枚）</label><input id="manual-files" name="files" type="file" accept="image/*" multiple></div>
+    <button id="save-material" type="submit">タイムラインに追加</button>
+  </form>
+  <details class="settings" open><summary>取得元から追加</summary>
+    <p class="hint">選択した取得元だけを問い合わせ、新しい項目だけ追加します。選択していない取得元と保存済み素材には触れません。</p>
+    <form id="gmail-append-form" action="/api/append-sources" method="post">
+      <fieldset><legend>追加する取得元</legend><div class="sources">
+        <label><input name="sources" type="checkbox" value="gmail"><span>Gmail</span></label>
+        <label><input name="sources" type="checkbox" value="bluesky"><span>Bluesky</span></label>
+        <label><input name="sources" type="checkbox" value="x"><span>Twilog</span></label>
+        <label><input name="sources" type="checkbox" value="strava"><span>Strava</span></label>
+        <label><input name="sources" type="checkbox" value="flickr"><span>Flickr</span></label>
+      </div></fieldset>
+      <div class="dates"><div class="field"><label for="gmail-related-from">関連検索の開始日</label><input id="gmail-related-from" name="relatedFrom" type="date"></div><div class="field"><label for="gmail-related-to">関連検索の終了日</label><input id="gmail-related-to" name="relatedTo" type="date"></div></div>
+      <div class="field"><label for="gmail-keywords">期間外の関連キーワード</label><textarea id="gmail-keywords" name="keywords" rows="4" placeholder="ホテル名&#10;イベント名&#10;目的地名"></textarea></div>
+      <button id="append-gmail" type="submit">選んだ取得元から追加</button>
+    </form>
+  </details>
+  <section id="manual-result" class="result" aria-live="polite" hidden></section>
+</main></body>
+</html>

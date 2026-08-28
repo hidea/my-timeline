@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { execFile } from 'node:child_process';
-import { copyFile, mkdtemp, writeFile } from 'node:fs/promises';
+import { copyFile, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { promisify } from 'node:util';
 import { download, ensureDir, escapeHtml, extFromUrl, hasNonemptyFile, safePart, shortId, timestampName, writeJson } from './utils.js';
@@ -21,10 +21,25 @@ export async function createWorkspace({ output, title, fromText, toText, events,
     onProgress(++completed, ordered.length, progressMessage(event));
     return normalizedEvent;
   });
-  const manifest = { schemaVersion: 1, title, from: fromText, to: toText, generatedAt: new Date().toISOString(), events: normalized };
+  const manifest = { schemaVersion: 1, workspaceRoot: root, title, from: fromText, to: toText, generatedAt: new Date().toISOString(), events: normalized };
   await writeJson(path.join(root, 'manifest.json'), manifest); await writeFile(path.join(root, 'timeline.html'), renderHtml(manifest));
   await writeFile(path.join(root, 'itinerary.md'), `# ${title} 行程\n\n<!-- 記録から確認できた出来事を、出典ファイル付きで整理する -->\n`); await writeFile(path.join(root, 'outline.md'), `# ${title} 構成案\n\n`); await writeFile(path.join(root, 'draft.md'), `# ${title}\n\n`);
   return root;
+}
+export async function appendEventsToWorkspace(root, events, { keepRemote = false, onProgress = () => {} } = {}) {
+  const manifestPath = path.join(root, 'manifest.json'), manifest = JSON.parse(await readFile(manifestPath, 'utf8')), existing = new Set(manifest.events.map(event => `${event.source}:${event.sourceId}`));
+  const ordered = events.filter(event => !existing.has(`${event.source}:${event.sourceId}`)).sort((a, b) => new Date(a.occurredAt) - new Date(b.occurredAt));
+  const materials = path.join(root, 'materials'), cache = path.join(root, '.timeline-cache'); await ensureDir(materials); await ensureDir(cache); await copyTimelineIcons(root);
+  let completed = 0;
+  const normalized = await mapLimit(ordered, 4, async event => {
+    onProgress(completed, ordered.length, progressMessage(event));
+    const base = `${timestampName(event.occurredAt)}_${event.source}_${safePart(event.sourceId, 'item')}_${shortId(event.sourceId)}`, mdName = `${base}.md`, mediaFiles = [], previewFiles = [];
+    let index = 0;
+    for (const media of event.media ?? []) { const name = `${base}_${String(++index).padStart(2, '0')}${extFromUrl(media.url)}`; try { const original = path.join(materials, name), preview = path.join(cache, name); if (!await hasNonemptyFile(original)) await downloadWithFallback(media, original); mediaFiles.push(name); previewFiles.push(await hasNonemptyFile(preview) || await makePreview(original, preview) ? `.timeline-cache/${name}` : `materials/${name}`); } catch (error) { if (keepRemote) mediaFiles.push(media.url); else event.mediaError = error.message; } }
+    await writeFile(path.join(materials, mdName), markdownFor(event, mediaFiles)); onProgress(++completed, ordered.length, progressMessage(event));
+    return { ...event, raw: undefined, markdown: `materials/${mdName}`, files: mediaFiles.map(name => name.startsWith('http') ? name : `materials/${name}`), previews: previewFiles };
+  });
+  manifest.workspaceRoot = root; manifest.events.push(...normalized); manifest.events.sort((a, b) => new Date(a.occurredAt) - new Date(b.occurredAt)); await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`); await writeFile(path.join(root, 'timeline.html'), renderHtml(manifest)); return { added: normalized.length, events: normalized, manifest, timeline: path.join(root, 'timeline.html') };
 }
 function progressMessage(event) { if (event.source === 'flickr') return 'Flickrの原寸画像を保存し、表示用画像を生成しています'; if (event.source === 'strava') return 'Stravaのスタート・ゴールとルートを書き出しています'; if (event.media?.length) return `${event.source}の画像と投稿を書き出しています`; return `${event.source}の投稿を書き出しています`; }
 async function makePreview(source, destination) {
@@ -67,16 +82,64 @@ async function persistentWorkspace(fromText, toText, title) {
 }
 function markdownFor(event, mediaFiles) { return ['---', `source: ${event.source}`, `source_id: ${JSON.stringify(event.sourceId)}`, `occurred_at: ${event.occurredAt}`, `original_url: ${event.originalUrl ?? ''}`, '---', '', event.text ?? '', '', ...mediaFiles.map((f, i) => f.startsWith('http') ? `[画像${i + 1}](${f})` : `![画像${i + 1}](${f})`), event.originalUrl ? `\n[元の記録](${event.originalUrl})` : '', ''].join('\n'); }
 export function renderHtml(m) {
-  const orderedEvents = [...m.events.filter(event => !event.related), ...m.events.filter(event => event.related)];
-  const cards = orderedEvents.map((e, i) => { const day = localDay(e.occurredAt), files = e.files ?? [], hasVisual = files.length || e.routeGeometry?.coordinates?.length, relatedHeading = e.related && !orderedEvents[i - 1]?.related ? '<h2 class="related-heading">関連資料（期間外）</h2><p class="related-description">キーワードに一致した、旅行期間外の記録です。</p>' : '', colors = sourceColors(e.source), icon = sourceIcon(e.source); return `${relatedHeading}<article tabindex="-1" class="event ${hasVisual ? 'has-media' : 'text-only'} ${i > 4 ? 'deferred' : ''} ${e.related ? 'related-material' : ''}" style="background:${colors.light};background:light-dark(${colors.light},${colors.dark})" data-date="${day}" data-source="${escapeHtml(e.source)}" data-search="${escapeHtml((e.text ?? '').toLowerCase())}"><header><time datetime="${escapeHtml(e.occurredAt)}">${escapeHtml(new Date(e.occurredAt).toLocaleString('ja-JP'))}</time><span>${icon ? `<img src=".timeline-cache/icons/${icon}" alt="" width="24" height="24" style="display:inline-block;width:24px;height:24px;margin-inline-end:7px;vertical-align:middle;object-fit:contain">` : ''}${escapeHtml(e.source)}${e.related ? ' · 関連資料' : ''}</span></header><div class="body"><p>${escapeHtml(e.text ?? '').replaceAll('\n', '<br>')}</p>${routeProgressFor(e)}${e.routeGeometry ? '' : mapFor(e.location)}</div><div class="media">${routePlotFor(e)}${files.map((f, j) => f.startsWith('http') ? `<a href="${escapeHtml(f)}">画像を開く</a>` : `<a class="image-link" href="${escapeHtml(f)}" aria-label="元の大きさで画像を開く"><img src="${escapeHtml(e.previews?.[j] ?? f)}" alt="" ${i === 0 && j === 0 ? 'fetchpriority="high"' : 'loading="lazy"'}></a>`).join('')}</div><footer>${e.markdown ? `<a href="${escapeHtml(e.markdown)}">記録</a>` : ''}${e.originalUrl ? ` · <a href="${escapeHtml(e.originalUrl)}">元ページ</a>` : ''}</footer></article>`; }).join('\n');
+  const orderedEvents = [...m.events].sort((a, b) => new Date(a.occurredAt) - new Date(b.occurredAt));
+  const cards = orderedEvents.map((e, i) => { const day = localDay(e.occurredAt), files = e.files ?? [], hasVisual = files.length || e.routeGeometry?.coordinates?.length, addLink = i === 0 && m.workspaceRoot ? `<p><a href="http://127.0.0.1:4177/add?root=${encodeURIComponent(m.workspaceRoot)}" style="display:inline-block;padding:10px 14px;border:1px solid currentColor;border-radius:8px;font-weight:700;text-decoration:none">＋ 素材を追加</a></p>` : '', colors = sourceColors(e.source), icon = sourceIcon(e.source); return `${addLink}<article tabindex="-1" class="event ${hasVisual ? 'has-media' : 'text-only'} ${i > 4 ? 'deferred' : ''}" style="background:${colors.light};background:light-dark(${colors.light},${colors.dark})" data-date="${day}" data-source="${escapeHtml(e.source)}" data-search="${escapeHtml((e.text ?? '').toLowerCase())}"><header><time datetime="${escapeHtml(e.occurredAt)}">${escapeHtml(new Date(e.occurredAt).toLocaleString('ja-JP'))}</time><span>${icon ? `<img src=".timeline-cache/icons/${icon}" alt="" width="24" height="24" style="display:inline-block;width:24px;height:24px;margin-inline-end:7px;vertical-align:middle;object-fit:contain">` : ''}${escapeHtml(e.source)}</span></header><div class="body">${eventTextFor(e)}${routeProgressFor(e)}${e.routeGeometry ? '' : mapFor(e.location)}</div><div class="media">${routePlotFor(e)}${files.map((f, j) => f.startsWith('http') ? `<a href="${escapeHtml(f)}">画像を開く</a>` : `<a class="image-link" href="${escapeHtml(f)}" aria-label="元の大きさで画像を開く"><img src="${escapeHtml(e.previews?.[j] ?? f)}" alt="" ${i === 0 && j === 0 ? 'fetchpriority="high"' : 'loading="lazy"'}></a>`).join('')}</div><footer>${e.markdown ? `<a href="${escapeHtml(e.markdown)}">記録</a>` : ''}${e.originalUrl ? ` · <a href="${escapeHtml(e.originalUrl)}">元ページ</a>` : ''}${deleteLinkFor(m, e)}</footer></article>`; }).join('\n');
   const options = [...new Set(m.events.map(e => e.source))].map(s => `<option>${escapeHtml(s)}</option>`).join('');
-  const days = [...new Set(m.events.filter(event => !event.related).map(e => localDay(e.occurredAt)))].map(day => `<option value="${day}">${day}</option>`).join('');
+  const days = [...new Set(orderedEvents.map(e => localDay(e.occurredAt)))].map(day => `<option value="${day}">${day}</option>`).join('');
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(m.title)}</title><style>:root{color-scheme:light dark;font-family:system-ui,sans-serif}body{max-width:1180px;margin:auto;padding:24px;background:#f4f1ea;color:#24211c}h1{margin-bottom:4px}.controls{position:sticky;top:0;z-index:2;display:flex;flex-wrap:wrap;gap:8px;padding:12px 0;background:#f4f1eadd;backdrop-filter:blur(10px)}input,select,button{font:inherit;padding:10px;border:1px solid #aaa;border-radius:8px;background:white;color:#222}input{flex:1;min-width:180px}main{container-type:inline-size}.event{display:grid;grid-template-columns:132px minmax(220px,1fr) minmax(260px,420px);grid-template-areas:"meta text media" "meta links media";align-items:start;gap:10px 18px;background:#fff;color:#222;margin:12px 0;padding:16px;border-radius:12px;box-shadow:0 2px 10px #0001;scroll-margin-top:84px}.event.text-only{grid-template-columns:132px minmax(0,1fr);grid-template-areas:"meta text" "meta links"}.event header{grid-area:meta;display:grid;gap:6px;color:#675f53;font-size:.86rem}.event .body{grid-area:text;min-width:0}.event p{margin:0;line-height:1.65;overflow-wrap:anywhere}.event footer{grid-area:links;align-self:end}.map{margin-top:12px}.map summary{cursor:pointer;color:#065fd4}.map iframe{display:block;width:100%;height:240px;margin-top:8px;border:1px solid #aaa;border-radius:8px}.map>a{display:inline-block;margin-top:6px}.media{grid-area:media;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(150px,100%),1fr));gap:4px;max-width:420px}.image-link{display:flex;justify-content:center;align-items:center;overflow:hidden;border-radius:12px;background:#eee}.media img{display:block;width:auto;max-width:100%;height:auto;max-height:420px;object-fit:contain}.large-images .event.has-media{grid-template-columns:132px minmax(0,1fr);grid-template-areas:"meta text" "meta media" "meta links"}.large-images .media{max-width:none;grid-template-columns:1fr}.large-images .media img{width:100%;max-height:none;object-fit:contain}.deferred{content-visibility:auto;contain-intrinsic-size:auto none auto 420px}[hidden]{display:none}@container (max-width:760px){.event,.event.text-only,.large-images .event.has-media{grid-template-columns:1fr;grid-template-areas:"meta" "text" "media" "links"}.event header{display:flex;justify-content:space-between}.media{max-width:506px}.media img{max-height:506px}}@media(prefers-color-scheme:dark){body{background:#171614;color:#eee}.event{background:#26231f;color:#eee}.controls{background:#171614dd}.image-link{background:#111}}</style></head><body><h1>${escapeHtml(m.title)}</h1><p>${escapeHtml(m.from)}〜${escapeHtml(m.to)} · ${m.events.length}件</p><div class="controls"><input id="q" type="search" placeholder="素材を検索"><select id="source"><option value="">すべて</option>${options}</select><select id="day"><option value="">日付へ移動</option>${days}</select><button id="image-size" type="button" aria-pressed="false">画像を大きく表示</button></div><main>${cards || '<p>該当する素材はありません。</p>'}</main><script>const q=document.querySelector('#q'),s=document.querySelector('#source'),day=document.querySelector('#day'),size=document.querySelector('#image-size'),cards=[...document.querySelectorAll('.event')];function filter(){const n=q.value.toLowerCase();for(const c of cards)c.hidden=!!((n&&!c.dataset.search.includes(n))||(s.value&&c.dataset.source!==s.value))}q.addEventListener('input',filter);s.addEventListener('change',filter);day.addEventListener('change',()=>{const target=cards.find(card=>card.dataset.date===day.value);if(target){target.scrollIntoView({block:'start'});target.focus({preventScroll:true})}});for(const map of document.querySelectorAll('.map'))map.addEventListener('toggle',()=>{if(map.open){const frame=map.querySelector('iframe[data-src]');if(frame){frame.src=frame.dataset.src;frame.removeAttribute('data-src')}}});size.addEventListener('click',()=>{const large=document.body.classList.toggle('large-images');size.setAttribute('aria-pressed',String(large));size.textContent=large?'画像を小さく表示':'画像を大きく表示'})</script></body></html>`;
 }
 const iconFiles = ['bluesky.png', 'email.png', 'flickr.png', 'place.png', 'strava.png', 'whatsapp.png', 'x.png'];
 export async function copyTimelineIcons(root) { const destination = path.join(root, '.timeline-cache', 'icons'); await ensureDir(destination); await Promise.all(iconFiles.map(name => copyFile(new URL(`../../resources/${name}`, import.meta.url), path.join(destination, name)))); }
-function sourceIcon(source) { return ({ bluesky: 'bluesky.png', x: 'x.png', flickr: 'flickr.png', strava: 'strava.png', gmail: 'email.png' })[source] ?? ''; }
-function sourceColors(source) { return ({ bluesky: { light: '#f1f8ff', dark: '#202b35' }, x: { light: '#f4f4f4', dark: '#242424' }, flickr: { light: '#fff3fa', dark: '#32242d' }, strava: { light: '#fff5ef', dark: '#352821' }, gmail: { light: '#fff8ed', dark: '#332e25' } })[source] ?? { light: '#ffffff', dark: '#26231f' }; }
+function sourceIcon(source) { return ({ bluesky: 'bluesky.png', x: 'x.png', flickr: 'flickr.png', strava: 'strava.png', gmail: 'email.png', place: 'place.png', whatsapp: 'whatsapp.png' })[source] ?? ''; }
+function sourceColors(source) { return ({ bluesky: { light: '#f1f8ff', dark: '#202b35' }, x: { light: '#f4f4f4', dark: '#242424' }, flickr: { light: '#fff3fa', dark: '#32242d' }, strava: { light: '#fff5ef', dark: '#352821' }, gmail: { light: '#fff8ed', dark: '#332e25' }, memo: { light: '#fffdf2', dark: '#302f25' }, place: { light: '#f1faf3', dark: '#223027' }, whatsapp: { light: '#f0fbf4', dark: '#203128' } })[source] ?? { light: '#ffffff', dark: '#26231f' }; }
+function eventTextFor(event) {
+  const text = String(event.text ?? ''), full = escapeHtml(text).replaceAll('\n', '<br>');
+  if (!['gmail', 'memo'].includes(event.source)) return `<p>${full}</p>`;
+  const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean),
+    previewText = event.source === 'gmail' ? lines.slice(0, 3).join('\n') : `${lines[0]?.slice(0, 180) ?? ''}${(lines[0]?.length ?? 0) > 180 || lines.length > 1 ? '…' : ''}`,
+    preview = escapeHtml(previewText).replaceAll('\n', '<br>');
+  return `<div class="collapsible-text"><p>${preview}</p><details><summary style="cursor:pointer;margin-block:.55rem;color:#065fd4;font-weight:700">全文を表示／閉じる</summary><div class="markdown-body">${renderSafeMarkdown(text)}</div></details></div>`;
+}
+function renderSafeMarkdown(markdown) {
+  const lines = String(markdown).replaceAll('\r\n', '\n').split('\n'), blocks = [];
+  let paragraph = [], list = null, quote = [], code = null;
+  const flushParagraph = () => { if (paragraph.length) blocks.push(`<p>${paragraph.map(renderMarkdownInline).join('<br>')}</p>`); paragraph = []; };
+  const flushList = () => { if (list) blocks.push(`<${list.type}>${list.items.map(item => `<li>${renderMarkdownInline(item)}</li>`).join('')}</${list.type}>`); list = null; };
+  const flushQuote = () => { if (quote.length) blocks.push(`<blockquote>${quote.map(renderMarkdownInline).join('<br>')}</blockquote>`); quote = []; };
+  const flush = () => { flushParagraph(); flushList(); flushQuote(); };
+  for (const line of lines) {
+    if (code) { if (/^```/.test(line)) { blocks.push(`<pre tabindex="0"><code>${escapeHtml(code.join('\n'))}</code></pre>`); code = null; } else code.push(line); continue; }
+    if (/^```/.test(line)) { flush(); code = []; continue; }
+    if (!line.trim()) { flush(); continue; }
+    const heading = line.match(/^(#{1,3})\s+(.+)$/), setext = line.match(/^\s*(=+|-+)\s*$/), unordered = line.match(/^\s*[-*+]\s+(.+)$/), ordered = line.match(/^\s*\d+[.)]\s+(.+)$/), quoted = line.match(/^>\s?(.*)$/);
+    if (setext && paragraph.length) { const title = paragraph.pop(); flush(); const level = setext[1][0] === '=' ? 3 : 4; blocks.push(`<h${level}>${renderMarkdownInline(title)}</h${level}>`); }
+    else if (heading) { flush(); blocks.push(`<h${heading[1].length + 2}>${renderMarkdownInline(heading[2])}</h${heading[1].length + 2}>`); }
+    else if (unordered || ordered) { flushParagraph(); flushQuote(); const type = unordered ? 'ul' : 'ol'; if (list?.type !== type) { flushList(); list = { type, items: [] }; } list.items.push((unordered ?? ordered)[1]); }
+    else if (quoted) { flushParagraph(); flushList(); quote.push(quoted[1]); }
+    else if (/^\s*(?:---+|___+|\*\*\*+)\s*$/.test(line)) { flush(); blocks.push('<hr>'); }
+    else { flushList(); flushQuote(); paragraph.push(line); }
+  }
+  if (code) blocks.push(`<pre tabindex="0"><code>${escapeHtml(code.join('\n'))}</code></pre>`);
+  flush();
+  return blocks.join('');
+}
+function renderMarkdownInline(value) {
+  const tokens = [];
+  const token = html => { tokens.push(html); return `\u0000${tokens.length - 1}\u0000`; };
+  let text = String(value)
+    .replace(/`([^`\n]+)`/g, (_, code) => token(`<code>${escapeHtml(code)}</code>`))
+    .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)(?:\s+(?:"[^"]*"|'[^']*'))?\)/g, (_, label, url) => token(`<a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${renderMarkdownLabel(label)}</a>`));
+  text = escapeHtml(text)
+    .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/__([^_\n]+)__/g, '<strong>$1</strong>')
+    .replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>')
+    .replace(/(?<!_)_([^_\n]+)_(?!_)/g, '<em>$1</em>');
+  return text.replace(/\u0000(\d+)\u0000/g, (_, index) => tokens[Number(index)]);
+}
+function renderMarkdownLabel(value) {
+  return escapeHtml(value).replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>').replace(/__([^_\n]+)__/g, '<strong>$1</strong>');
+}
+function deleteLinkFor(manifest, event) { if (!manifest.workspaceRoot) return ''; const query = new URLSearchParams({ root: manifest.workspaceRoot, source: event.source, sourceId: event.sourceId }); return ` · <a href="http://127.0.0.1:4177/delete?${escapeHtml(query)}" style="color:#a32121">削除</a>`; }
 function localDay(value) { return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value)); }
 function routeProgressFor(event) { if (!event.routeProgress) return ''; const km = (Number(event.routeProgress.distanceMeters) / 1000).toLocaleString('ja-JP', { maximumFractionDigits: 1 }); return `<p class="route-progress"><strong>${escapeHtml(event.routeProgress.activityName)} · スタートから ${km} km</strong>${event.locationInferredFromStrava ? '<br>時刻から推定した位置' : ''}</p>`; }
 function routePlotFor(event) {

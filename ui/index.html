@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ja">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>旅の素材を集める | My Timeline</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
-<body><main><p class="eyebrow">MY TIMELINE</p><h1>旅の素材を集める</h1><p class="intro">期間を選ぶだけで、投稿と写真をひとつの時系列にまとめます。</p>
+<body><main><p class="eyebrow">MY TIMELINE</p><h1>旅の素材を集める</h1><p class="intro">期間を選ぶだけで、投稿と写真をひとつの時系列にまとめます。</p><aside class="local-notice"><strong>ローカル専用アドレス</strong><p>My TimelineはこのMac内の <code>http://127.0.0.1:4177/</code> で動作します。標準構成ではこのアドレスとポートを固定で使用します。外部には公開されません。</p></aside>
 <form id="collect-form" action="/api/collect" method="post">
   <div class="dates"><div class="field"><label for="from">開始日</label><input id="from" name="from" type="date" required></div><div class="field"><label for="to">終了日</label><input id="to" name="to" type="date" required></div></div>
   <div class="field"><label for="title">旅行記の名前</label><input id="title" name="title" type="text" maxlength="80" placeholder="例：瀬戸内自転車旅行"></div>
@@ -23,7 +23,7 @@
   <p id="strava-message" aria-live="polite"></p>
 </details>
 <details class="settings"><summary>Gmail設定 <span id="gmail-status">未確認</span></summary>
-  <p class="hint">Google CloudでGmail APIを有効にし、OAuthクライアントを作成します。承認済みリダイレクトURIは <code>http://127.0.0.1:4177/api/gmail/callback</code> です。権限は読み取り専用です。</p>
+  <p class="hint">Google CloudでGmail APIを有効にし、OAuthクライアントを作成します。My Timelineの固定アドレスに合わせ、承認済みリダイレクトURIは <code>http://127.0.0.1:4177/api/gmail/callback</code> です。権限は読み取り専用です。</p>
   <details class="setup-guide"><summary>Google Cloudでの設定手順</summary>
     <ol>
       <li><a href="https://console.cloud.google.com/" target="_blank" rel="noreferrer">Google Cloud Console</a>を開き、<strong>My Timeline</strong>などの名前でプロジェクトを作成します。</li>
