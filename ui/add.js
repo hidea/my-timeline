@@ -1,5 +1,6 @@
 const form = document.querySelector('#manual-form'), result = document.querySelector('#manual-result'), save = document.querySelector('#save-material'), occurredAt = document.querySelector('#occurred-at');
 const gmailForm = document.querySelector('#gmail-append-form'), gmailButton = document.querySelector('#append-gmail'), root = new URLSearchParams(location.search).get('root');
+const emlForm = document.querySelector('#eml-form'), emlButton = document.querySelector('#import-eml');
 const now = new Date(Date.now() - new Date().getTimezoneOffset() * 60_000); occurredAt.value = now.toISOString().slice(0, 16);
 document.querySelector('#current-location').addEventListener('click', () => navigator.geolocation.getCurrentPosition(position => { form.latitude.value = position.coords.latitude; form.longitude.value = position.coords.longitude; }, error => show(`現在地を取得できませんでした: ${error.message}`, true)));
 form.addEventListener('submit', async event => {
@@ -11,6 +12,15 @@ form.addEventListener('submit', async event => {
 });
 function encodeFile(file) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve({ name: file.name, type: file.type, data: String(reader.result).split(',')[1] }); reader.onerror = () => reject(reader.error); reader.readAsDataURL(file); }); }
 function show(message, failed = false) { result.hidden = false; result.classList.toggle('error', failed); result.textContent = message; }
+emlForm.addEventListener('submit', async event => {
+  event.preventDefault(); const files = [...emlForm.files.files]; if (files.length > 100) return show('EMLファイルは一度に100件までです。', true);
+  emlButton.disabled = true; emlButton.textContent = '読み込んでいます…'; show(`${files.length}件のEMLを解析し、本文と添付ファイルを保存しています。`);
+  try {
+    const encoded = await Promise.all(files.map(file => encodeFile(file)));
+    const response = await fetch('/api/import-eml', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ root, files: encoded }) }), body = await response.json();
+    if (!response.ok) throw new Error(body.error || 'EMLを追加できませんでした。'); show(`${body.imported}件のメールを追加しました。更新したタイムラインを開きます。`); emlForm.reset();
+  } catch (error) { show(error.message, true); } finally { emlButton.disabled = false; emlButton.textContent = 'EMLをタイムラインに追加'; }
+});
 gmailForm.addEventListener('submit', async event => {
   event.preventDefault(); const sources = [...gmailForm.querySelectorAll('input[name="sources"]:checked')].map(input => input.value); if (!sources.length) return show('追加する取得元を選んでください。', true); gmailButton.disabled = true; gmailButton.textContent = '取得しています…'; show(`${sources.join('、')}から新しい項目を取得しています。保存済み素材は再取得しません。`);
   try {

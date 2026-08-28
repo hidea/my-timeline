@@ -6,6 +6,7 @@ import path from 'node:path';
 import { appendEventsToWorkspace, createWorkspace } from '../src/lib/workspace.js';
 import { addManualMaterial } from '../src/manual-material.js';
 import { deleteTimelineEvent } from '../src/delete-event.js';
+import { importEmlFiles } from '../src/import-eml.js';
 test('creates a disposable writing workspace', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'timeline-test-'));
   await createWorkspace({ output: root, title: '京都旅行', fromText: '2025-08-01', toText: '2025-08-02', events: [{ source: 'bluesky', sourceId: 'abc', occurredAt: '2025-08-01T09:00:00+09:00', text: '京都に着いた', media: [] }] });
@@ -63,6 +64,16 @@ test('renders Gmail and memo Markdown without allowing raw HTML or unsafe links'
   assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
   assert.doesNotMatch(html, /href="javascript:/);
+});
+
+test('imports EML using its sent date and preserves attachments', async () => {
+  const root = path.join(await mkdtemp(path.join(tmpdir(), 'eml-parent-')), 'My Timeline EML test');
+  await createWorkspace({ output: root, title: '旅行', fromText: '2026-06-16', toText: '2026-06-17', events: [] });
+  const eml = ['From: sender@example.com', 'To: reader@example.com', 'Subject: =?UTF-8?B?5LqI57SE56K66KqN?=', 'Date: Tue, 16 Jun 2026 10:30:00 +0900', 'MIME-Version: 1.0', 'Content-Type: multipart/mixed; boundary="test-boundary"', '', '--test-boundary', 'Content-Type: text/plain; charset=UTF-8', '', '**予約番号** ABC123', '--test-boundary', 'Content-Type: text/plain; name="ticket.txt"', 'Content-Disposition: attachment; filename="ticket.txt"', '', 'ticket body', '--test-boundary--', ''].join('\r\n');
+  const result = await importEmlFiles(root, [{ name: 'booking.eml', type: 'message/rfc822', data: Buffer.from(eml).toString('base64') }]);
+  const manifest = JSON.parse(await readFile(path.join(root, 'manifest.json'), 'utf8')), html = await readFile(path.join(root, 'timeline.html'), 'utf8');
+  assert.equal(result.imported, 1); assert.equal(manifest.events[0].source, 'gmail'); assert.equal(manifest.events[0].occurredAt, '2026-06-16T01:30:00.000Z');
+  assert.match(html, /予約確認/); assert.match(html, /<strong>予約番号<\/strong>/); assert.match(html, />booking\.eml<\/a>/); assert.match(html, />ticket\.txt<\/a>/);
 });
 
 test('appends only new source events without rewriting existing materials', async () => {

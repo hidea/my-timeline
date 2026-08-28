@@ -25,6 +25,13 @@
     <div class="field"><label for="manual-files">写真（最大10枚）</label><input id="manual-files" name="files" type="file" accept="image/*" multiple></div>
     <button id="save-material" type="submit">タイムラインに追加</button>
   </form>
+  <details class="settings" open><summary>EMLファイルからメールを追加</summary>
+    <p class="hint">別のメールアプリから書き出した .eml を読み込みます。送信日時を使って時系列へ挿入し、元のEMLと添付ファイルも保存します。</p>
+    <form id="eml-form" action="/api/import-eml" method="post">
+      <div class="field"><label for="eml-files">EMLファイル（最大100件）</label><input id="eml-files" name="files" type="file" accept=".eml,message/rfc822" multiple required aria-describedby="eml-help"><p id="eml-help" class="hint">Finderから複数選択できます。</p></div>
+      <button id="import-eml" type="submit">EMLをタイムラインに追加</button>
+    </form>
+  </details>
   <details class="settings" open><summary>取得元から追加</summary>
     <p class="hint">選択した取得元だけを問い合わせ、新しい項目だけ追加します。選択していない取得元と保存済み素材には触れません。</p>
     <form id="gmail-append-form" action="/api/append-sources" method="post">

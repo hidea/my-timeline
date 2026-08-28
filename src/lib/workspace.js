@@ -98,7 +98,11 @@ function eventTextFor(event) {
   const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean),
     previewText = event.source === 'gmail' ? lines.slice(0, 3).join('\n') : `${lines[0]?.slice(0, 180) ?? ''}${(lines[0]?.length ?? 0) > 180 || lines.length > 1 ? '…' : ''}`,
     preview = escapeHtml(previewText).replaceAll('\n', '<br>');
-  return `<div class="collapsible-text"><p>${preview}</p><details><summary style="cursor:pointer;margin-block:.55rem;color:#065fd4;font-weight:700">全文を表示／閉じる</summary><div class="markdown-body">${renderSafeMarkdown(text)}</div></details></div>`;
+  return `<div class="collapsible-text"><p>${preview}</p><details><summary style="cursor:pointer;margin-block:.55rem;color:#065fd4;font-weight:700">全文を表示／閉じる</summary><div class="markdown-body">${renderSafeMarkdown(text)}</div></details>${attachmentLinksFor(event)}</div>`;
+}
+function attachmentLinksFor(event) {
+  if (!event.attachments?.length) return '';
+  return `<p style="margin-top:.7rem">${event.attachments.map(attachment => `<a href="${escapeHtml(attachment.path)}" download>${escapeHtml(attachment.name)}</a>`).join(' · ')}</p>`;
 }
 function renderSafeMarkdown(markdown) {
   const lines = String(markdown).replaceAll('\r\n', '\n').split('\n'), blocks = [];

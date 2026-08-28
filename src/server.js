@@ -12,6 +12,7 @@ import { exchangeGmailCode } from './collectors/gmail.js';
 import { addManualMaterial } from './manual-material.js';
 import { appendSources } from './append-sources.js';
 import { deleteTimelineEvent, eventInfo } from './delete-event.js';
+import { importEmlFiles } from './import-eml.js';
 
 const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const uiRoot = join(projectRoot, 'ui');
@@ -35,6 +36,10 @@ const server = createServer(async (request, response) => {
       const body = await readJson(request, 100 * 1024 * 1024), root = resolve(String(body.root ?? '')), downloads = resolve(homedir(), 'Downloads'), pathFromDownloads = relative(downloads, root);
       if (!root || pathFromDownloads.startsWith('..') || pathFromDownloads.includes('../')) throw new Error('追加先が不正です。');
       const timeline = await addManualMaterial(root, body); await open(timeline); json(response, 200, { saved: true }); return;
+    }
+    if (request.method === 'POST' && request.url === '/api/import-eml') {
+      const body = await readJson(request, 150 * 1024 * 1024), root = workspaceRoot(body.root);
+      const result = await importEmlFiles(root, body.files); await open(result.timeline); json(response, 200, result); return;
     }
     if (request.method === 'GET' && request.url.startsWith('/api/workspace-info?')) {
       const root = workspaceRoot(new URL(request.url, `http://${host}`).searchParams.get('root')), manifest = JSON.parse(await readFile(join(root, 'manifest.json'), 'utf8')); json(response, 200, { title: manifest.title, from: manifest.from, to: manifest.to }); return;
