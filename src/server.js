@@ -134,7 +134,7 @@ function validate(body) {
   if (!Array.isArray(body.sources) || !body.sources.length) throw new Error('取得元を1つ以上選んでください。');
   if (body.sources.some(source => !['bluesky', 'x', 'flickr', 'strava', 'gmail'].includes(source))) throw new Error('不明な取得元です。');
   if (body.sources.includes('gmail') && !body.relatedKeywords?.length) throw new Error('Gmailを取得するには検索キーワードを入力してください。');
-  if (body.relatedKeywords?.length && body.sources.some(source => ['bluesky', 'x'].includes(source))) {
+  if (body.relatedKeywords?.length && body.sources.some(source => ['bluesky', 'x', 'gmail'].includes(source))) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(body.relatedFrom) || !/^\d{4}-\d{2}-\d{2}$/.test(body.relatedTo)) throw new Error('関連資料の検索期間を指定してください。');
     if (body.relatedTo < body.relatedFrom) throw new Error('関連資料の終了日は開始日以降にしてください。');
   }

@@ -76,7 +76,7 @@ node --env-file=.env src/cli.js flickr-auth
 5. 「ウェブ アプリケーション」のOAuthクライアントを作成し、承認済みリダイレクトURIへ `http://127.0.0.1:4177/api/gmail/callback` を登録します。
 6. My Timeline下部の「Gmail設定」へClient IDとClient Secretを入力して保存し、「Gmailに接続」を押します。
 
-詳細手順はMy Timeline画面内の「Google Cloudでの設定手順」にもあります。Gmailは行事期間では絞らず、入力したキーワードに一致するメールだけを取得します。キーワードは必須です。
+詳細手順はMy Timeline画面内の「Google Cloudでの設定手順」にもあります。Gmailは、キーワード検索欄で指定した日付範囲とキーワードの両方に一致するメールだけを取得します。キーワードと検索期間は必須です。
 
 ### EMLファイル
 

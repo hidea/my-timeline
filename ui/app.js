@@ -30,7 +30,7 @@ form.addEventListener('submit', async event => {
   if (days < 1 || days > 31) return show('期間は1日以上31日以内にしてください。', true);
   const keywords = relatedKeywords.value.split(/\n/).map(value => value.trim()).filter(Boolean);
   if (selected.includes('gmail') && !keywords.length) return show('Gmailを取得するには検索キーワードを入力してください。', true);
-  if (keywords.length && selected.some(source => ['bluesky', 'x'].includes(source)) && (!relatedFrom.value || !relatedTo.value || relatedTo.value < relatedFrom.value)) return show('Bluesky・Twilogの関連検索期間を正しく指定してください。', true);
+  if (keywords.length && selected.some(source => ['bluesky', 'x', 'gmail'].includes(source)) && (!relatedFrom.value || !relatedTo.value || relatedTo.value < relatedFrom.value)) return show('キーワード検索の期間を正しく指定してください。', true);
   submit.disabled = true; submit.textContent = '収集中…'; show('収集を開始します');
   try {
     const response = await fetch('/api/collect', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ from: from.value, to: to.value, title: form.title.value.trim(), sources: selected, relatedFrom: relatedFrom.value, relatedTo: relatedTo.value, relatedKeywords: keywords }) });

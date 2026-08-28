@@ -22,6 +22,17 @@ test('renders a Strava route beside ride details', async () => {
   assert.match(html, /走行ルート/); assert.match(html, /tile\.openstreetmap\.org/); assert.match(html, /L\.polyline/); assert.match(html, /new ResizeObserver\(fitRoute\)/); assert.match(html, /invalidateSize\(\)/); assert.match(html, /padding:\[40,40\]/); assert.doesNotMatch(html, /zoomOut/); assert.match(html, /10 km/);
 });
 
+test('renders date bars, time at bottom right, icon links, and outside card selectors', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'timeline-design-test-'));
+  await createWorkspace({ output: root, title: '行事', fromText: '2026-05-02', toText: '2026-05-03', events: [
+    { source: 'bluesky', sourceId: 'one', occurredAt: '2026-05-02T09:00:00+09:00', text: '一日目', originalUrl: 'https://example.com/one', media: [] },
+    { source: 'bluesky', sourceId: 'two', occurredAt: '2026-05-03T09:00:00+09:00', text: '二日目', media: [] }
+  ] });
+  const html = await readFile(path.join(root, 'timeline.html'), 'utf8'), footer = html.match(/<footer>[\s\S]*?<\/footer>/)?.[0] ?? '';
+  assert.equal((html.match(/class="date-bar"/g) ?? []).length, 2); assert.match(html, /2026年5月2日\(土\)/); assert.match(html, /header>span\{order:-1\}/); assert.match(html, /shell\.append\(box\)/); assert.match(html, /\.event-shell\{position:relative\}/); assert.match(html, /\.card-select\{position:absolute/); assert.equal((footer.match(/class="material-symbols-rounded"/g) ?? []).length, 3); assert.match(footer, />description<|>open_in_new<|>delete</); assert.doesNotMatch(footer, /<svg|📝|↗|🗑| · /); assert.match(html, /footer a\{[^}]*text-decoration:none/); assert.ok((await readFile(path.join(root, '.timeline-cache', 'material-symbols-rounded.woff2'))).length > 0);
+  assert.match(footer, /<time class="event-time"/); assert.match(html, /\.event-time\{margin-inline-start:auto\}/); assert.match(html, /grid-template-areas:"meta text media" "meta links links"/); assert.match(html, /\.event\.text-only \.media:empty\{display:none\}/); assert.match(html, /class="selection-controls" role="group"/); assert.match(html, /\.event\.text-only\.deferred\{content-visibility:visible;contain-intrinsic-size:none\}/);
+});
+
 test('places keyword matches in complete chronological order', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'timeline-related-test-'));
   await createWorkspace({ output: root, title: '旅行', fromText: '2026-06-16', toText: '2026-06-29', events: [

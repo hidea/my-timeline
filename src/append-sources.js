@@ -15,9 +15,11 @@ export async function appendSources(root, manifest, options = {}) {
   if (sources.includes('flickr')) add('Flickr（行事期間）', collectFlickr({ fromText: manifest.from, toText: manifest.to, limit, apiKey: process.env.FLICKR_API_KEY, apiSecret: process.env.FLICKR_API_SECRET, oauthToken: process.env.FLICKR_OAUTH_TOKEN, oauthTokenSecret: process.env.FLICKR_OAUTH_TOKEN_SECRET, userId: process.env.FLICKR_USER_ID }));
   if (sources.includes('strava')) add('Strava（行事期間）', collectStrava({ from, to, clientId: process.env.STRAVA_CLIENT_ID, clientSecret: process.env.STRAVA_CLIENT_SECRET, refreshToken: process.env.STRAVA_REFRESH_TOKEN, accessToken: process.env.STRAVA_ACCESS_TOKEN, expiresAt: process.env.STRAVA_EXPIRES_AT }));
   const keywords = (options.keywords ?? []).map(String).map(value => value.trim()).filter(Boolean);
+  if (options.relatedFrom && options.relatedTo && options.relatedTo < options.relatedFrom) throw new Error('キーワード検索の終了日は開始日以降にしてください。');
   if (sources.includes('gmail')) {
     if (!keywords.length) throw new Error('Gmailを追加するには検索キーワードを入力してください。');
-    add('Gmail（キーワード）', collectGmail({ limit: 500, keywords, clientId: process.env.GMAIL_CLIENT_ID, clientSecret: process.env.GMAIL_CLIENT_SECRET, refreshToken: process.env.GMAIL_REFRESH_TOKEN }));
+    if (!options.relatedFrom || !options.relatedTo) throw new Error('Gmailを追加するには検索開始日と終了日を指定してください。');
+    add('Gmail（日付・キーワード）', collectGmail({ fromText: options.relatedFrom, toText: options.relatedTo, limit: 500, keywords, clientId: process.env.GMAIL_CLIENT_ID, clientSecret: process.env.GMAIL_CLIENT_SECRET, refreshToken: process.env.GMAIL_REFRESH_TOKEN }));
   }
   if (keywords.length && options.relatedFrom && options.relatedTo) {
     const relatedFrom = parseDate(options.relatedFrom), relatedTo = parseDate(options.relatedTo, true), mark = promise => promise.then(events => events.filter(event => new Date(event.occurredAt) < from || new Date(event.occurredAt) > to).map(event => ({ ...event, related: true })));

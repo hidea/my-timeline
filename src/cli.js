@@ -23,7 +23,9 @@ async function collect(argv) {
   if (sources.includes('strava')) tasks.push(tracked('Strava', collectStrava({ from, to, clientId: process.env.STRAVA_CLIENT_ID, clientSecret: process.env.STRAVA_CLIENT_SECRET, refreshToken: process.env.STRAVA_REFRESH_TOKEN, accessToken: process.env.STRAVA_ACCESS_TOKEN, expiresAt: process.env.STRAVA_EXPIRES_AT })));
   if (sources.includes('gmail')) {
     if (!keywords.length) throw new Error('Gmailを取得するには関連キーワードを入力してください。');
-    tasks.push(tracked('Gmail（キーワード）', collectGmail({ limit, keywords, clientId: process.env.GMAIL_CLIENT_ID, clientSecret: process.env.GMAIL_CLIENT_SECRET, refreshToken: process.env.GMAIL_REFRESH_TOKEN })));
+    if (!a['related-from'] || !a['related-to']) throw new Error('Gmailを取得するには検索開始日と終了日を指定してください。');
+    if (a['related-to'] < a['related-from']) throw new Error('キーワード検索の終了日は開始日以降にしてください。');
+    tasks.push(tracked('Gmail（日付・キーワード）', collectGmail({ fromText: a['related-from'], toText: a['related-to'], limit, keywords, clientId: process.env.GMAIL_CLIENT_ID, clientSecret: process.env.GMAIL_CLIENT_SECRET, refreshToken: process.env.GMAIL_REFRESH_TOKEN })));
   }
   if (keywords.length && a['related-from'] && a['related-to']) {
     const relatedFrom = parseDate(a['related-from']), relatedTo = parseDate(a['related-to'], true);
