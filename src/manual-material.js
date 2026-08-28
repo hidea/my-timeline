@@ -18,7 +18,7 @@ export async function addManualMaterial(root, input) {
   for (const [index, file] of (input.files ?? []).slice(0, 50).entries()) {
     const extension = String(file.name).match(/\.[a-zA-Z0-9]{1,10}$/)?.[0]?.toLowerCase() ?? '', name = `${base}_${String(index + 1).padStart(2, '0')}${extension}`;
     const original = join(root, 'materials', name); await writeFile(original, Buffer.from(file.data, 'base64'));
-    if (String(file.type).startsWith('image/')) {
+    if (String(file.type).startsWith('image/') && source !== 'eml') {
       const preview = join(root, '.timeline-cache', name); files.push(`materials/${name}`);
       try { await run('/usr/bin/sips', ['-Z', '900', original, '--out', preview]); previews.push(`.timeline-cache/${name}`); } catch { previews.push(`materials/${name}`); }
     } else attachments.push({ name: String(file.name || name), path: `materials/${name}`, type: String(file.type ?? '') });

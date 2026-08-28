@@ -32,12 +32,12 @@ function activityEvents(activity, points) {
   ];
 }
 
-function geometryFor(points) { const step = Math.max(1, Math.ceil(points.length / 500)), sampled = points.filter((_, index) => index % step === 0); if (points.length && sampled.at(-1) !== points.at(-1)) sampled.push(points.at(-1)); return { coordinates: sampled.map(point => [point.latitude, point.longitude]), totalDistanceMeters: points.at(-1)?.distanceMeters ?? 0 }; }
+function geometryFor(points) { const step = Math.max(1, Math.ceil(points.length / 500)), sampled = points.filter((_, index) => index % step === 0); if (points.length && sampled.at(-1) !== points.at(-1)) sampled.push(points.at(-1)); return { coordinates: sampled.map(point => [point.latitude, point.longitude]), points: sampled, totalDistanceMeters: points.at(-1)?.distanceMeters ?? 0 }; }
 
 function pointLocation(point, fallback) { if (point) return { latitude: point.latitude, longitude: point.longitude }; return Array.isArray(fallback) && fallback.length === 2 ? { latitude: fallback[0], longitude: fallback[1] } : null; }
 
 export function enrichStravaPositions(events) {
-  const routes = events.map(event => event._stravaRoute).filter(Boolean);
+  const routes = events.map(event => event._stravaRoute ?? storedRoute(event)).filter(Boolean);
   for (const event of events) {
     const timestamp = new Date(event.occurredAt).getTime(), route = routes.find(candidate => timestamp >= candidate.startMs && timestamp <= candidate.endMs);
     if (route?.points.length) {
@@ -48,6 +48,13 @@ export function enrichStravaPositions(events) {
     delete event._stravaRoute;
   }
   return events;
+}
+
+function storedRoute(event) {
+  const points = event.routeGeometry?.points;
+  if (event.source !== 'strava' || !String(event.sourceId).endsWith(':start') || !points?.length) return null;
+  const startMs = new Date(event.occurredAt).getTime();
+  return { activityId: String(event.sourceId).replace(/:start$/, ''), activityName: String(event.text ?? '').split('\n')[1] || 'Stravaアクティビティ', startMs, endMs: startMs + Number(points.at(-1).seconds) * 1000, points };
 }
 
 function nearestPoint(points, seconds) {

@@ -20,6 +20,7 @@ test('renders a Strava route beside ride details', async () => {
   await createWorkspace({ output: root, title: 'ライド', fromText: '2026-05-02', toText: '2026-05-02', events: [{ source: 'strava', sourceId: '1:start', occurredAt: '2026-05-02T00:00:00Z', text: '▶ スタート\n距離 10 km', originalUrl: 'https://www.strava.com/activities/1', media: [], routeGeometry: { coordinates: [[35, 139], [35.1, 139.2]], totalDistanceMeters: 10000 } }] });
   const html = await readFile(path.join(root, 'timeline.html'), 'utf8');
   assert.match(html, /走行ルート/); assert.match(html, /tile\.openstreetmap\.org/); assert.match(html, /L\.polyline/); assert.match(html, /new ResizeObserver\(fitRoute\)/); assert.match(html, /invalidateSize\(\)/); assert.match(html, /padding:\[40,40\]/); assert.doesNotMatch(html, /zoomOut/); assert.match(html, /10 km/);
+  assert.match(html, /<iframe src="about:blank" data-srcdoc=/); assert.doesNotMatch(html, /<iframe srcdoc=/); assert.match(html, /new IntersectionObserver/); assert.match(html, /frame\.src='about:blank'/);
 });
 
 test('renders date bars, time at bottom right, icon links, and outside card selectors', async () => {
@@ -31,6 +32,16 @@ test('renders date bars, time at bottom right, icon links, and outside card sele
   const html = await readFile(path.join(root, 'timeline.html'), 'utf8'), footer = html.match(/<footer>[\s\S]*?<\/footer>/)?.[0] ?? '';
   assert.equal((html.match(/class="date-bar"/g) ?? []).length, 2); assert.match(html, /2026年5月2日\(土\)/); assert.match(html, /header>span\{order:-1\}/); assert.match(html, /shell\.append\(box\)/); assert.match(html, /\.event-shell\{position:relative\}/); assert.match(html, /\.card-select\{position:absolute/); assert.equal((footer.match(/class="material-symbols-rounded"/g) ?? []).length, 3); assert.match(footer, />description<|>open_in_new<|>delete</); assert.doesNotMatch(footer, /<svg|📝|↗|🗑| · /); assert.match(html, /footer a\{[^}]*text-decoration:none/); assert.ok((await readFile(path.join(root, '.timeline-cache', 'material-symbols-rounded.woff2'))).length > 0);
   assert.match(footer, /<time class="event-time"/); assert.match(html, /\.event-time\{margin-inline-start:auto\}/); assert.match(html, /grid-template-areas:"meta text media" "meta links links"/); assert.match(html, /\.event\.text-only \.media:empty\{display:none\}/); assert.match(html, /class="selection-controls" role="group"/); assert.match(html, /\.event\.text-only\.deferred\{content-visibility:visible;contain-intrinsic-size:none\}/);
+});
+
+test('shows local time from card location together with Japan time', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'timeline-timezone-test-'));
+  await createWorkspace({ output: root, title: '行事', fromText: '2026-06-16', toText: '2026-06-17', events: [
+    { source: 'flickr', sourceId: 'nyc', occurredAt: '2026-06-16T12:00:00Z', text: 'ニューヨーク', location: { latitude: 40.7128, longitude: -74.006 }, media: [] },
+    { source: 'memo', sourceId: 'japan', occurredAt: '2026-06-16T13:00:00Z', text: '位置なし', media: [] }
+  ] });
+  const html = await readFile(path.join(root, 'timeline.html'), 'utf8');
+  assert.match(html, /\(2026\/6\/16 21:00:00 JST\)<\/span><span>2026\/6\/16 0?8:00:00 (?:EDT|GMT-4)/); assert.match(html, /<time class="event-time" datetime="2026-06-16T13:00:00Z">2026\/6\/16 22:00:00 JST<\/time>/); assert.doesNotMatch(html, /現地 |日本時間 /);
 });
 
 test('places keyword matches in complete chronological order', async () => {
@@ -80,11 +91,11 @@ test('renders Gmail and memo Markdown without allowing raw HTML or unsafe links'
 test('imports EML using its sent date and preserves attachments', async () => {
   const root = path.join(await mkdtemp(path.join(tmpdir(), 'eml-parent-')), 'My Timeline EML test');
   await createWorkspace({ output: root, title: '旅行', fromText: '2026-06-16', toText: '2026-06-17', events: [] });
-  const eml = ['From: sender@example.com', 'To: reader@example.com', 'Subject: =?UTF-8?B?5LqI57SE56K66KqN?=', 'Date: Tue, 16 Jun 2026 10:30:00 +0900', 'MIME-Version: 1.0', 'Content-Type: multipart/mixed; boundary="test-boundary"', '', '--test-boundary', 'Content-Type: text/plain; charset=UTF-8', '', '**予約番号** ABC123', '--test-boundary', 'Content-Type: text/plain; name="ticket.txt"', 'Content-Disposition: attachment; filename="ticket.txt"', '', 'ticket body', '--test-boundary--', ''].join('\r\n');
+  const eml = ['From: sender@example.com', 'To: reader@example.com', 'Subject: =?UTF-8?B?5LqI57SE56K66KqN?=', 'Date: Tue, 16 Jun 2026 10:30:00 +0900', 'MIME-Version: 1.0', 'Content-Type: multipart/mixed; boundary="test-boundary"', '', '--test-boundary', 'Content-Type: text/plain; charset=UTF-8', '', '**予約番号** ABC123', '--test-boundary', 'Content-Type: text/plain; name="ticket.txt"', 'Content-Disposition: attachment; filename="ticket.txt"', '', 'ticket body', '--test-boundary', 'Content-Type: image/png; name="map.png"', 'Content-Disposition: attachment; filename="map.png"', 'Content-Transfer-Encoding: base64', '', 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', '--test-boundary--', ''].join('\r\n');
   const result = await importEmlFiles(root, [{ name: 'booking.eml', type: 'message/rfc822', data: Buffer.from(eml).toString('base64') }]);
   const manifest = JSON.parse(await readFile(path.join(root, 'manifest.json'), 'utf8')), html = await readFile(path.join(root, 'timeline.html'), 'utf8');
   assert.equal(result.imported, 1); assert.equal(manifest.events[0].source, 'eml'); assert.equal(manifest.events[0].occurredAt, '2026-06-16T01:30:00.000Z');
-  assert.match(html, /予約確認/); assert.match(html, /<strong>予約番号<\/strong>/); assert.match(html, />booking\.eml<\/a>/); assert.match(html, />ticket\.txt<\/a>/);
+  assert.match(html, /予約確認/); assert.match(html, /<strong>予約番号<\/strong>/); assert.match(html, />booking\.eml<\/a>/); assert.match(html, />ticket\.txt<\/a>/); assert.match(html, />map\.png<\/a>/); assert.doesNotMatch(html, /class="image-link"/);
 });
 
 test('appends only new source events without rewriting existing materials', async () => {

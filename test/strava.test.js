@@ -24,3 +24,10 @@ test('places timeline events along a Strava route by elapsed clock time', () => 
   assert.deepEqual(photo.location, { latitude: 36, longitude: 140 });
   assert.equal(start._stravaRoute, undefined);
 });
+
+test('reuses persisted sampled Strava points when materials are added later', () => {
+  const start = { source: 'strava', sourceId: '2:start', occurredAt: '2026-05-02T00:00:00Z', text: '▶ スタート\nStored Ride', routeGeometry: { points: [{ seconds: 0, distanceMeters: 0, latitude: 35, longitude: 139 }, { seconds: 600, distanceMeters: 5000, latitude: 35.1, longitude: 139.1 }] } };
+  const photo = { source: 'flickr', sourceId: 'later-photo', occurredAt: '2026-05-02T00:06:00Z', location: { latitude: 35.05, longitude: 139.05 } };
+  enrichStravaPositions([start, photo]);
+  assert.equal(photo.routeProgress.distanceMeters, 5000); assert.equal(photo.routeProgress.activityName, 'Stored Ride');
+});
