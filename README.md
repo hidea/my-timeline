@@ -1,4 +1,18 @@
-# my-timeline
+# My Timeline
+
+## 概要
+
+「My Timeline」は、指定した期間やキーワードに合ったSNS投稿や写真、メールなどを収集し、時系列で整理した閲覧環境を構築するためのツールです。収集した素材はFinderで扱える形式で保存され、閲覧用のファイルも生成されます。
+
+サポートしている取得元は以下の通りです。
+
+- Bluesky（bskylogのMCP経由）
+- X（TwilogのMCP経由）
+- Flickr（公開・非公開写真）
+- Strava（アクティビティ）
+- Gmail（メール）
+- EMLファイル（メールのエクスポート）
+- 手動追加
 
 ## 画面から使う
 
@@ -6,7 +20,7 @@
 
 My Timelineはローカルの固定アドレス `http://127.0.0.1:4177/` で動作します。`127.0.0.1` はローカルホストなので外部には公開されません。素材追加リンクとGmail OAuthのリダイレクトURIも、この標準アドレスを前提としています。
 
-行事の記録を書く間だけ使う素材収集ツールです。指定期間（最大31日）のBluesky、X、Flickr、Stravaを集め、Finderで扱えるフラットな素材と、ローカルで開けるタイムラインを「ダウンロード」に生成します。永続DBは使いません。執筆後は生成フォルダをFinderから削除できます。
+行事の記録を書く間だけ使う素材収集ツールです。指定期間（最大31日）のBluesky、X、Flickr、Stravaを集め、Finderで扱えるフラットな素材と、ローカルで開けるタイムラインを「ダウンロード」に生成します。永続DBは使いません。使い終わった後は生成フォルダをFinderから削除できます。
 
 ## 準備
 
@@ -50,7 +64,6 @@ FLICKR_USER_ID="24796462@N08"
 - `FLICKR_USER_ID`: FlickrのユーザーID（例: `24796462@N08`）
 
 非公開・限定公開写真も含める場合は、同じ画面で表示されるSecretも `.env` の `FLICKR_API_SECRET` に保存します。その後、一度だけ次を実行するとブラウザでFlickrの読み取り許可画面が開きます。
-
 
 ```sh
 node --env-file=.env src/cli.js flickr-auth
@@ -113,10 +126,8 @@ node --env-file-if-exists=.env src/cli.js collect \
 生成物:
 
 - `materials/`: 日時順のMarkdownと画像
-- `selected/`: 採用写真を置く空フォルダ
 - `timeline.html`: 検索・ソース絞り込み付き一覧
 - `manifest.json`: 一時ワークスペースの索引
-- `itinerary.md`, `outline.md`, `draft.md`: 執筆用ファイル
 
 MCPのツール定義は次で確認できます。
 

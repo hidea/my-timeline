@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { access, mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { appendEventsToWorkspace, createWorkspace } from '../src/lib/workspace.js';
@@ -13,6 +13,7 @@ test('creates a disposable writing workspace', async () => {
   const manifest = JSON.parse(await readFile(path.join(root, 'manifest.json'))), html = await readFile(path.join(root, 'timeline.html'), 'utf8');
   assert.equal(manifest.events.length, 1); assert.match(html, /京都に着いた/); assert.match(html, /content-visibility:auto/); assert.match(html, /icons\/bluesky\.png/); assert.match(html, /light-dark\(#f1f8ff,#202b35\)/);
   assert.ok((await readFile(path.join(root, '.timeline-cache', 'icons', 'bluesky.png'))).length > 0);
+  for (const name of ['itinerary.md', 'outline.md', 'draft.md', 'selected']) await assert.rejects(access(path.join(root, name)), { code: 'ENOENT' });
 });
 
 test('renders a Strava route beside ride details', async () => {

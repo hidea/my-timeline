@@ -11,9 +11,9 @@ Create a disposable, evidence-backed event-writing workspace with this repositor
 
 1. Determine the event title and inclusive start/end dates. Ask only when these cannot be inferred safely. The range must not exceed 31 days.
 2. Run `node src/cli.js collect --from YYYY-MM-DD --to YYYY-MM-DD --title "行事名"`. Omit unavailable sources with `--sources`. Never print access tokens.
-3. Tell the user the workspace path and point them to `timeline.html` and `materials/`. Let them copy chosen images into `selected/`.
-4. Reconstruct `itinerary.md`. Every asserted stop or event must cite one or more relative material paths. Mark plausible but unverified transitions as questions, not facts.
-5. Prepare `outline.md`, then draft `draft.md` after the user confirms the itinerary and selections. Use relative image links.
+3. Tell the user the workspace path and point them to `timeline.html` and `materials/`.
+4. Reconstruct the chronology in the user's chosen writing destination. Every asserted stop or event must cite one or more relative material paths. Mark plausible but unverified transitions as questions, not facts.
+5. Prepare an outline, then draft the article after the user confirms the chronology and selections. Do not create writing files inside the disposable timeline workspace unless the user explicitly asks for them.
 6. Copy only the confirmed article and selected media to the user's chosen destination.
 7. Delete the workspace only after explicit confirmation. Report exactly what was deleted.
 

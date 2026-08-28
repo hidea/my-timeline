@@ -9,7 +9,7 @@ const execFileAsync = promisify(execFile);
 
 export async function createWorkspace({ output, title, fromText, toText, events, keepRemote = false, onProgress = () => {} }) {
   const root = output ? path.resolve(output) : await persistentWorkspace(fromText, toText, title);
-  const materials = path.join(root, 'materials'), cache = path.join(root, '.timeline-cache'); await ensureDir(materials); await ensureDir(cache); await ensureDir(path.join(root, 'selected')); await copyTimelineIcons(root);
+  const materials = path.join(root, 'materials'), cache = path.join(root, '.timeline-cache'); await ensureDir(materials); await ensureDir(cache); await copyTimelineIcons(root);
   const ordered = events.sort((a, b) => new Date(a.occurredAt) - new Date(b.occurredAt));
   let completed = 0;
   const normalized = await mapLimit(ordered, 4, async event => {
@@ -24,7 +24,6 @@ export async function createWorkspace({ output, title, fromText, toText, events,
   });
   const manifest = { schemaVersion: 1, workspaceRoot: root, title, from: fromText, to: toText, generatedAt: new Date().toISOString(), events: normalized };
   await writeJson(path.join(root, 'manifest.json'), manifest); await writeFile(path.join(root, 'timeline.html'), renderHtml(manifest));
-  await writeFile(path.join(root, 'itinerary.md'), `# ${title} 行程\n\n<!-- 記録から確認できた出来事を、出典ファイル付きで整理する -->\n`); await writeFile(path.join(root, 'outline.md'), `# ${title} 構成案\n\n`); await writeFile(path.join(root, 'draft.md'), `# ${title}\n\n`);
   return root;
 }
 export async function appendEventsToWorkspace(root, events, { keepRemote = false, onProgress = () => {} } = {}) {
