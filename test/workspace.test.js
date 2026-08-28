@@ -42,7 +42,7 @@ test('shows local time from card location together with Japan time', async () =>
     { source: 'memo', sourceId: 'japan', occurredAt: '2026-06-16T13:00:00Z', text: '位置なし', media: [] }
   ] });
   const html = await readFile(path.join(root, 'timeline.html'), 'utf8');
-  assert.match(html, /\(2026\/6\/16 21:00:00 JST\)<\/span><span>2026\/6\/16 0?8:00:00 (?:EDT|GMT-4)/); assert.match(html, /<time class="event-time" datetime="2026-06-16T13:00:00Z">2026\/6\/16 22:00:00 JST<\/time>/); assert.doesNotMatch(html, /現地 |日本時間 /);
+  assert.match(html, /\(2026\/6\/16 21:00:00 JST\)<\/span><span>2026\/6\/16 0?8:00:00 (?:EDT|GMT-4)/); assert.match(html, /class="event-time event-time-inferred" datetime="2026-06-16T13:00:00Z" data-time-inherited-from="nyc"/); assert.match(html, /\(2026\/6\/16 22:00:00 JST\)<\/span><span>2026\/6\/16 0?9:00:00 (?:EDT|GMT-4)/); assert.doesNotMatch(html, /現地 |日本時間 /);
 });
 
 test('places keyword matches in complete chronological order', async () => {

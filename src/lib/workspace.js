@@ -97,7 +97,7 @@ async function persistentWorkspace(fromText, toText, title) {
 }
 function markdownFor(event, mediaFiles) { return ['---', `source: ${event.source}`, `source_id: ${JSON.stringify(event.sourceId)}`, `occurred_at: ${event.occurredAt}`, `original_url: ${event.originalUrl ?? ''}`, '---', '', event.text ?? '', '', ...mediaFiles.map((f, i) => f.startsWith('http') ? `[画像${i + 1}](${f})` : `![画像${i + 1}](${f})`), event.originalUrl ? `\n[元の記録](${event.originalUrl})` : '', ''].join('\n'); }
 function renderHtmlBase(m) {
-  const orderedEvents = [...m.events].sort((a, b) => new Date(a.occurredAt) - new Date(b.occurredAt));
+  const orderedEvents = inferDisplayTimeZones([...m.events].sort((a, b) => new Date(a.occurredAt) - new Date(b.occurredAt)), m.from, m.to);
   const cards = orderedEvents.map((e, i) => { const day = localDay(e.occurredAt), files = e.files ?? [], hasVisual = files.length || e.routeGeometry?.coordinates?.length, addLink = i === 0 && m.workspaceRoot ? `<p><a href="http://127.0.0.1:4177/add?root=${encodeURIComponent(m.workspaceRoot)}" style="display:inline-block;padding:10px 14px;border:1px solid currentColor;border-radius:8px;font-weight:700;text-decoration:none">＋ 素材を追加</a></p>` : '', colors = sourceColors(e.source), icon = sourceIcon(e.source); return `${addLink}<article tabindex="-1" class="event ${hasVisual ? 'has-media' : 'text-only'} ${i > 4 ? 'deferred' : ''}" style="background:${colors.light};background:light-dark(${colors.light},${colors.dark})" data-date="${day}" data-source="${escapeHtml(e.source)}" data-search="${escapeHtml((e.text ?? '').toLowerCase())}"><header><span>${icon ? `<img src=".timeline-cache/icons/${icon}" alt="" width="24" height="24" style="display:inline-block;width:24px;height:24px;margin-inline-end:7px;vertical-align:middle;object-fit:contain">` : ''}${escapeHtml(e.source)}</span></header><div class="body">${eventTextFor(e)}${routeProgressFor(e)}${e.routeGeometry ? '' : mapFor(e.location)}</div><div class="media">${routePlotFor(e)}${files.map((f, j) => f.startsWith('http') ? `<a href="${escapeHtml(f)}">画像を開く</a>` : `<a class="image-link" href="${escapeHtml(f)}" aria-label="元の大きさで画像を開く"><img src="${escapeHtml(e.previews?.[j] ?? f)}" alt="" ${i === 0 && j === 0 ? 'fetchpriority="high"' : 'loading="lazy"'}></a>`).join('')}</div><footer>${e.markdown ? `<a href="${escapeHtml(e.markdown)}">記録</a>` : ''}${e.originalUrl ? ` · <a href="${escapeHtml(e.originalUrl)}">元ページ</a>` : ''}${deleteLinkFor(m, e)}</footer><time class="event-time" datetime="${escapeHtml(e.occurredAt)}">${escapeHtml(new Date(e.occurredAt).toLocaleString('ja-JP'))}</time></article>`; }).join('\n');
   const options = [...new Set(m.events.map(e => e.source))].map(s => `<option>${escapeHtml(s)}</option>`).join('');
   const days = [...new Set(orderedEvents.map(e => localDay(e.occurredAt)))].map(day => `<option value="${day}">${day}</option>`).join('');
@@ -108,7 +108,7 @@ export function renderHtml(m) {
   if (!m.workspaceRoot || !m.events.length) return html;
   html = html.replace(/<iframe srcdoc="([^"]*)"/g, '<iframe src="about:blank" data-srcdoc="$1"').replace(/<iframe src="(https:\/\/www\.openstreetmap\.org\/export\/embed\.html[^"]*)"/g, '<iframe src="about:blank" data-src="$1"');
   html = html.replace(/<article\b(?=[^>]*\bdata-source="eml")[\s\S]*?<\/article>/g, article => article.replace('class="event has-media', 'class="event text-only').replace(/<div class="media">[\s\S]*?<\/div><footer>/, '<div class="media"></div><footer>'));
-  const orderedEvents = [...m.events].sort((a, b) => new Date(a.occurredAt) - new Date(b.occurredAt));
+  const orderedEvents = inferDisplayTimeZones([...m.events].sort((a, b) => new Date(a.occurredAt) - new Date(b.occurredAt)), m.from, m.to);
   let timeIndex = 0;
   html = html.replace(/<time class="event-time"[\s\S]*?<\/time>/g, () => eventTimeFor(orderedEvents[timeIndex++]));
   let previousDay = '';
@@ -193,13 +193,24 @@ function renderMarkdownLabel(value) {
 function deleteLinkFor(manifest, event) { if (!manifest.workspaceRoot) return ''; const query = new URLSearchParams({ root: manifest.workspaceRoot, source: event.source, sourceId: event.sourceId }); return ` · <a href="http://127.0.0.1:4177/delete?${escapeHtml(query)}" style="color:#a32121">削除</a>`; }
 function localDay(value) { return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value)); }
 function eventTimeFor(event) {
-  const date = new Date(event.occurredAt), japanZone = 'Asia/Tokyo', japan = formatEventTime(date, japanZone), lat = Number(event.location?.latitude), lon = Number(event.location?.longitude);
-  if (event.flickrTakenOffset && event.flickrTakenOffset !== '+09:00') return `<time class="event-time" datetime="${escapeHtml(event.occurredAt)}"><span>(${escapeHtml(japan)})</span><span>${escapeHtml(formatOffsetTime(date, event.flickrTakenOffset))}</span></time>`;
-  let localZone = event.flickrTakenTimeZone ?? japanZone;
+  const date = new Date(event.occurredAt), japanZone = 'Asia/Tokyo', japan = formatEventTime(date, japanZone), lat = Number(event.location?.latitude), lon = Number(event.location?.longitude), offset = event.flickrTakenOffset ?? event.displayTimeOffset, inferred = Boolean(event.displayTimeInheritedFrom), timeAttrs = inferred ? ` class="event-time event-time-inferred" datetime="${escapeHtml(event.occurredAt)}" data-time-inherited-from="${escapeHtml(event.displayTimeInheritedFrom)}" title="直前の位置情報があるカードから時差を推定"` : ` class="event-time" datetime="${escapeHtml(event.occurredAt)}"`;
+  if (offset && offset !== '+09:00') return `<time${timeAttrs}><span>(${escapeHtml(japan)})</span><span>${escapeHtml(formatOffsetTime(date, offset))}</span></time>`;
+  let localZone = event.displayTimeZone ?? event.flickrTakenTimeZone ?? japanZone;
   if (Number.isFinite(lat) && Number.isFinite(lon)) { try { localZone = tzlookup(lat, lon); } catch {} }
-  if (localZone === japanZone) return `<time class="event-time" datetime="${escapeHtml(event.occurredAt)}">${escapeHtml(japan)}</time>`;
-  return `<time class="event-time" datetime="${escapeHtml(event.occurredAt)}"><span>(${escapeHtml(japan)})</span><span>${escapeHtml(formatEventTime(date, localZone))}</span></time>`;
+  if (localZone === japanZone) return `<time${timeAttrs}>${escapeHtml(japan)}</time>`;
+  return `<time${timeAttrs}><span>(${escapeHtml(japan)})</span><span>${escapeHtml(formatEventTime(date, localZone))}</span></time>`;
 }
+export function inferDisplayTimeZones(events, from, to) {
+  const start = Date.parse(`${from}T00:00:00+09:00`), end = Date.parse(`${to}T23:59:59.999+09:00`); let previous = null;
+  return events.map(original => {
+    const event = { ...original }, timestamp = new Date(event.occurredAt).getTime(), inRange = timestamp >= start && timestamp <= end, basis = eventTimeBasis(event);
+    if (!inRange) return event;
+    if (basis) previous = { ...basis, sourceId: event.sourceId };
+    else if (event.source !== 'flickr' && previous) { if (previous.type === 'offset') event.displayTimeOffset = previous.value; else event.displayTimeZone = previous.value; event.displayTimeInheritedFrom = previous.sourceId; }
+    return event;
+  });
+}
+function eventTimeBasis(event) { if (event.flickrTakenOffset) return { type: 'offset', value: event.flickrTakenOffset }; if (event.flickrTakenTimeZone) return { type: 'zone', value: event.flickrTakenTimeZone }; const lat = Number(event.location?.latitude), lon = Number(event.location?.longitude); if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null; try { return { type: 'zone', value: tzlookup(lat, lon) }; } catch { return null; } }
 function formatEventTime(date, timeZone) { return new Intl.DateTimeFormat('ja-JP', { timeZone, year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZoneName: 'short' }).format(date); }
 function formatOffsetTime(date, offset) { const sign = offset.startsWith('-') ? -1 : 1, [hours, minutes] = offset.slice(1).split(':').map(Number), shifted = new Date(date.getTime() + sign * (hours * 60 + minutes) * 60_000), label = `GMT${offset.replace(/:00$/, '').replace(/^\+0?/, '+').replace(/^-0?/, '-')}`; return `${new Intl.DateTimeFormat('ja-JP', { timeZone: 'UTC', year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(shifted)} ${label}`; }
 function routeProgressFor(event) { if (!event.routeProgress) return ''; const km = (Number(event.routeProgress.distanceMeters) / 1000).toLocaleString('ja-JP', { maximumFractionDigits: 1 }); return `<p class="route-progress"><strong>${escapeHtml(event.routeProgress.activityName)} · スタートから ${km} km</strong>${event.locationInferredFromStrava ? '<br>時刻から推定した位置' : ''}</p>`; }
