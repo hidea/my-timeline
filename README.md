@@ -4,6 +4,12 @@
 
 「My Timeline」は、指定した期間やキーワードに合ったSNS投稿や写真、メールなどを収集し、時系列で整理した閲覧環境を構築するためのツールです。収集した素材はFinderで扱える形式で保存され、閲覧用のファイルも生成されます。
 
+### 生成されるタイムラインの例
+
+X、Bluesky、Flickr、Stravaなどの素材を、日付ごとにまとめて時系列で閲覧できます。
+
+[![ALPI4000のタイムライン例](docs/alpi4000-timeline-example.png)](docs/alpi4000-timeline-example.png)
+
 サポートしている取得元は以下の通りです。
 
 - Bluesky（bskylogのMCP経由）
