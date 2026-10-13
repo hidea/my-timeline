@@ -69,7 +69,7 @@ async function mapLimit(items, concurrency, work) { const results = new Array(it
 async function validToken({ clientId, clientSecret, refreshToken, accessToken, expiresAt, envFile }) {
   if (accessToken && Number(expiresAt) > Date.now() / 1000 + 3600) return accessToken;
   const response = await fetch('https://www.strava.com/oauth/token', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, grant_type: 'refresh_token', refresh_token: refreshToken }), signal: AbortSignal.timeout(30_000) });
-  const data = await response.json(); if (!response.ok) throw new Error(`Stravaトークンの更新に失敗しました (${response.status})。`);
+  const data = await response.json(); if (response.status === 400 || response.status === 401) throw new Error('Stravaの認証が失効しています。画面下部の「Strava設定」で「Stravaに再接続」を押してください。'); if (!response.ok) throw new Error(`Stravaトークンの更新に失敗しました (${response.status})。`);
   await updateEnv(envFile, { STRAVA_ACCESS_TOKEN: data.access_token, STRAVA_REFRESH_TOKEN: data.refresh_token, STRAVA_EXPIRES_AT: data.expires_at });
   return data.access_token;
 }

@@ -6,7 +6,7 @@ import { collectGmail } from './collectors/gmail.js';
 import { collectStrava, enrichStravaPositions } from './collectors/strava.js';
 import { collectTwilog } from './collectors/twilog.js';
 import { appendEventsToWorkspace, renderHtml } from './lib/workspace.js';
-import { parseDate } from './lib/utils.js';
+import { parseDate, sourceSummary } from './lib/utils.js';
 
 export async function appendSources(root, manifest, options = {}) {
   const sources = options.sources ?? [], limit = 1000, from = parseDate(manifest.from), to = parseDate(manifest.to, true), tasks = [], add = (name, promise) => tasks.push(promise.catch(error => { throw new Error(`${name}: ${error.message}`); }));
@@ -28,8 +28,9 @@ export async function appendSources(root, manifest, options = {}) {
   }
   const settled = await Promise.allSettled(tasks), events = settled.flatMap(result => result.status === 'fulfilled' ? result.value : []), failures = settled.filter(result => result.status === 'rejected').map(result => result.reason.message);
   if (!events.length && failures.length) throw new Error(failures.join('\n'));
-  const result = await appendEventsToWorkspace(root, deduplicate(events)); enrichStravaPositions(result.manifest.events.filter(event => !event.related)); await writeFile(join(root, 'manifest.json'), `${JSON.stringify(result.manifest, null, 2)}\n`); await writeFile(result.timeline, renderHtml(result.manifest)); return { added: result.added, repaired: result.repaired, breakdown: summarize(result.events), timeline: result.timeline, warnings: failures };
+  const fetched = deduplicate(events), result = await appendEventsToWorkspace(root, fetched); enrichStravaPositions(result.manifest.events.filter(event => !event.related));
+  const added = sourceSummary(sources, result.events), breakdown = sourceSummary(sources, fetched).map((item, i) => ({ ...item, added: added[i].total }));
+  result.manifest.collections = [...(result.manifest.collections ?? []), { type: 'append', collectedAt: new Date().toISOString(), sources, relatedFrom: options.relatedFrom ?? null, relatedTo: options.relatedTo ?? null, keywords, summary: breakdown, warnings: failures }]; await writeFile(join(root, 'manifest.json'), `${JSON.stringify(result.manifest, null, 2)}\n`); await writeFile(result.timeline, renderHtml(result.manifest)); return { added: result.added, repaired: result.repaired, breakdown, timeline: result.timeline, warnings: failures };
 }
 async function sequential(keywords, collect) { const events = []; for (const keyword of keywords) events.push(...await collect(keyword)); return events; }
 function deduplicate(events) { const map = new Map(); for (const event of events) { const key = `${event.source}:${event.sourceId}`, previous = map.get(key); if (!previous || (previous.related && !event.related)) map.set(key, event); } return [...map.values()]; }
-function summarize(events) { return Object.values(events.reduce((summary, event) => { const item = summary[event.source] ??= { source: event.source, total: 0, related: 0 }; item.total++; if (event.related) item.related++; return summary; }, {})); }

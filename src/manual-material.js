@@ -1,17 +1,16 @@
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { copyTimelineIcons, renderHtml } from './lib/workspace.js';
-import { safePart, timestampName } from './lib/utils.js';
+import { httpError, timestampName } from './lib/utils.js';
 
 const run = promisify(execFile);
 export async function addManualMaterial(root, input) {
   const manifestPath = join(root, 'manifest.json'), manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
-  if (!basename(root).startsWith('My Timeline ')) throw new Error('My Timelineの出力フォルダではありません。');
   const occurredAt = new Date(String(input.occurredAt).match(/[zZ]|[+-]\d\d:?\d\d$/) ? input.occurredAt : `${input.occurredAt}:00+09:00`);
-  if (Number.isNaN(occurredAt.valueOf())) throw new Error('日時を指定してください。');
+  if (Number.isNaN(occurredAt.valueOf())) throw httpError(400, '日時を指定してください。');
   const source = ['memo', 'place', 'eml'].includes(input.source) ? input.source : 'memo', id = randomUUID(), base = `${timestampName(occurredAt)}_${source}_${id.slice(0, 10)}`;
   await mkdir(join(root, 'materials'), { recursive: true }); await mkdir(join(root, '.timeline-cache'), { recursive: true });
   const files = [], previews = [], attachments = [];

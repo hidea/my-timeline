@@ -1,11 +1,11 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { basename, join, relative, resolve } from 'node:path';
 import { copyTimelineIcons, renderHtml } from './lib/workspace.js';
-import { safePart } from './lib/utils.js';
+import { httpError, safePart } from './lib/utils.js';
 
 export async function eventInfo(root, source, sourceId) {
   const manifest = JSON.parse(await readFile(join(root, 'manifest.json'), 'utf8')), event = manifest.events.find(item => item.source === source && item.sourceId === sourceId);
-  if (!event) throw new Error('対象のカードが見つかりません。'); return { source: event.source, sourceId: event.sourceId, occurredAt: event.occurredAt, text: event.text };
+  if (!event) throw httpError(404, '対象のカードが見つかりません。'); return { source: event.source, sourceId: event.sourceId, occurredAt: event.occurredAt, text: event.text };
 }
 export async function bulkDeleteInfo(root, selectedIds = []) {
   const manifest = JSON.parse(await readFile(join(root, 'manifest.json'), 'utf8')), events = selectedEvents(manifest.events, selectedIds);
@@ -13,7 +13,7 @@ export async function bulkDeleteInfo(root, selectedIds = []) {
 }
 export async function deleteTimelineEvent(root, source, sourceId) {
   const manifestPath = join(root, 'manifest.json'), manifest = JSON.parse(await readFile(manifestPath, 'utf8')), index = manifest.events.findIndex(event => event.source === source && event.sourceId === sourceId);
-  if (index < 0) throw new Error('対象のカードが見つかりません。');
+  if (index < 0) throw httpError(404, '対象のカードが見つかりません。');
   const [event] = manifest.events.splice(index, 1), trash = join(root, '.timeline-trash', `${Date.now()}_${safePart(sourceId, 'item')}`); await mkdir(trash, { recursive: true });
   await writeFile(join(trash, 'event.json'), `${JSON.stringify(event, null, 2)}\n`);
   const paths = eventPaths(event);
@@ -22,7 +22,7 @@ export async function deleteTimelineEvent(root, source, sourceId) {
 }
 export async function deleteTimelineEvents(root, selectedIds = []) {
   const manifestPath = join(root, 'manifest.json'), manifest = JSON.parse(await readFile(manifestPath, 'utf8')), events = selectedEvents(manifest.events, selectedIds);
-  if (!events.length) throw new Error('削除対象のカードが見つかりません。');
+  if (!events.length) throw httpError(404, '削除対象のカードが見つかりません。');
   const ids = new Set(events.map(event => `${event.source}:${event.sourceId}`)), trash = join(root, '.timeline-trash', `${Date.now()}_一括削除`); await mkdir(trash, { recursive: true });
   for (const [index, event] of events.entries()) {
     const eventTrash = join(trash, String(index + 1).padStart(4, '0')); await mkdir(eventTrash, { recursive: true }); await writeFile(join(eventTrash, 'event.json'), `${JSON.stringify(event, null, 2)}\n`);

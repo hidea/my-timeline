@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { access, mkdtemp, readFile } from 'node:fs/promises';
+import { access, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { appendEventsToWorkspace, createWorkspace } from '../src/lib/workspace.js';
+import { appendEventsToWorkspace, createWorkspace, RENDER_VERSION, refreshOutdatedTimelines } from '../src/lib/workspace.js';
 import { addManualMaterial } from '../src/manual-material.js';
 import { deleteTimelineEvent, deleteTimelineEvents } from '../src/delete-event.js';
 import { importEmlFiles } from '../src/import-eml.js';
@@ -20,7 +20,7 @@ test('renders a Strava route beside ride details', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'timeline-route-test-'));
   await createWorkspace({ output: root, title: 'ライド', fromText: '2026-05-02', toText: '2026-05-02', events: [{ source: 'strava', sourceId: '1:start', occurredAt: '2026-05-02T00:00:00Z', text: '▶ スタート\n距離 10 km', originalUrl: 'https://www.strava.com/activities/1', media: [], routeGeometry: { coordinates: [[35, 139], [35.1, 139.2]], totalDistanceMeters: 10000 } }] });
   const html = await readFile(path.join(root, 'timeline.html'), 'utf8');
-  assert.match(html, /走行ルート/); assert.match(html, /tile\.openstreetmap\.org/); assert.match(html, /L\.polyline/); assert.match(html, /new ResizeObserver\(fitRoute\)/); assert.match(html, /invalidateSize\(\)/); assert.match(html, /padding:\[40,40\]/); assert.doesNotMatch(html, /zoomOut/); assert.match(html, /10 km/);
+  assert.match(html, /走行ルート/); assert.match(html, /tiles\.openfreemap\.org/); assert.match(html, /L\.polyline/); assert.match(html, /new ResizeObserver\(fitRoute\)/); assert.match(html, /invalidateSize\(\)/); assert.match(html, /padding:\[40,40\]/); assert.doesNotMatch(html, /zoomOut/); assert.match(html, /10 km/);
   assert.match(html, /<iframe src="about:blank" data-srcdoc=/); assert.doesNotMatch(html, /<iframe srcdoc=/); assert.match(html, /new IntersectionObserver/); assert.match(html, /frame\.src='about:blank'/);
 });
 
@@ -127,4 +127,70 @@ test('bulk deletes only checked card ids and keeps the rest', async () => {
   let html = await readFile(path.join(root, 'timeline.html'), 'utf8'); assert.match(html, /表示中をすべて選択/); assert.match(html, /すべて外す/);
   const result = await deleteTimelineEvents(root, ['gmail:mail-1']), manifest = JSON.parse(await readFile(path.join(root, 'manifest.json'), 'utf8'));
   assert.equal(result.deleted, 1); assert.deepEqual(manifest.events.map(event => event.sourceId), ['mail-2']); assert.match(await readFile(path.join(result.trash, '0001', 'event.json'), 'utf8'), /mail-1/);
+});
+
+test('renders multi-select source filters, card keys, and an overview map with day/all scopes', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'timeline-overview-test-'));
+  await createWorkspace({ output: root, title: '行事', fromText: '2026-05-02', toText: '2026-05-03', events: [
+    { source: 'strava', sourceId: '1:start', occurredAt: '2026-05-02T08:00:00+09:00', text: '▶ スタート', originalUrl: 'https://www.strava.com/activities/1', location: { latitude: 35, longitude: 139 }, media: [], routeGeometry: { coordinates: [[35, 139], [35.1, 139.2]], totalDistanceMeters: 10000 } },
+    { source: 'strava', sourceId: '1:end', occurredAt: '2026-05-02T10:00:00+09:00', text: '■ ゴール', originalUrl: 'https://www.strava.com/activities/1', location: { latitude: 35.1, longitude: 139.2 }, media: [], routeGeometry: { coordinates: [[35, 139], [35.1, 139.2]], totalDistanceMeters: 10000 } },
+    { source: 'flickr', sourceId: 'photo<1>', occurredAt: '2026-05-03T09:00:00+09:00', text: '写真</script>', location: { latitude: '35.5', longitude: '139.5' }, media: [] },
+    { source: 'bluesky', sourceId: 'post', occurredAt: '2026-05-03T10:00:00+09:00', text: '位置なし', media: [] }
+  ] });
+  const html = await readFile(path.join(root, 'timeline.html'), 'utf8'), data = JSON.parse(html.match(/<script type="application\/json" id="timeline-data">([\s\S]*?)<\/script>/)[1]);
+  assert.match(html, /<fieldset class="source-filter">/); for (const source of ['strava', 'flickr', 'bluesky']) assert.match(html, new RegExp(`<input type="checkbox" value="${source}" checked>`)); assert.doesNotMatch(html, /<select id="source">/);
+  assert.match(html, /data-key="flickr:photo&lt;1&gt;"/);
+  assert.match(html, /<details id="overview-map" class="overview-map">/); assert.match(html, /data-scope="day" aria-pressed="true">この日/); assert.match(html, /<iframe id="overview-map-frame"[^>]*data-srcdoc="[^"]*tiles\.openfreemap\.org/); assert.match(html, /data-scope="all" aria-pressed="false">全期間/);
+  assert.equal(data.root, root); assert.equal(data.initialDay, '2026-05-02');
+  assert.equal(data.map.routes.length, 1); assert.deepEqual(data.map.routes[0], { key: 'strava:1:start', date: '2026-05-02', coords: [[35, 139], [35.1, 139.2]] });
+  assert.deepEqual(data.map.points.map(point => [point.key, point.date, point.lat, point.lon]), [['flickr:photo<1>', '2026-05-03', 35.5, 139.5]]);
+  assert.doesNotMatch(html.match(/id="timeline-data">[\s\S]*?<\/script>/)[0].slice(0, -9), /<\/script/);
+});
+
+test('omits the overview map without locations and keeps an empty timeline usable', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'timeline-no-map-test-'));
+  await createWorkspace({ output: root, title: '行事', fromText: '2026-05-02', toText: '2026-05-02', events: [{ source: 'bluesky', sourceId: 'post', occurredAt: '2026-05-02T10:00:00+09:00', text: '位置なし', media: [] }] });
+  assert.doesNotMatch(await readFile(path.join(root, 'timeline.html'), 'utf8'), /id="overview-map"/);
+  const empty = await mkdtemp(path.join(tmpdir(), 'timeline-empty-test-'));
+  await createWorkspace({ output: empty, title: '行事', fromText: '2026-05-02', toText: '2026-05-02', events: [] });
+  const html = await readFile(path.join(empty, 'timeline.html'), 'utf8');
+  assert.match(html, /該当する素材はありません/); assert.match(html, /素材を追加/);
+});
+
+test('builds the timeline from Flickr preview images first and fetches originals afterwards with resume', async t => {
+  const { createServer } = await import('node:http'), { repairWorkspaceMedia } = await import('../src/lib/repair.js');
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'), hits = [];
+  const server = createServer((request, response) => { hits.push(request.url); if (request.url === '/o/broken.png') { response.statusCode = 404; response.end(); return; } response.end(Buffer.concat([png, Buffer.from(request.url)])); });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}`, root = await mkdtemp(path.join(tmpdir(), 'timeline-deferred-test-'));
+  await createWorkspace({ output: root, title: '行事', fromText: '2026-05-02', toText: '2026-05-02', events: [
+    { source: 'flickr', sourceId: 'p1', occurredAt: '2026-05-02T09:00:00+09:00', text: '一枚目', media: [{ url: `${base}/o/one.png`, previewUrl: `${base}/l/one.png`, deferOriginal: true }] },
+    { source: 'flickr', sourceId: 'p2', occurredAt: '2026-05-02T10:00:00+09:00', text: '二枚目', media: [{ url: `${base}/o/broken.png`, previewUrl: `${base}/l/two.png`, deferOriginal: true }] }
+  ] });
+  assert.deepEqual(hits.sort(), ['/l/one.png', '/l/two.png']);
+  let manifest = JSON.parse(await readFile(path.join(root, 'manifest.json'), 'utf8')), html = await readFile(path.join(root, 'timeline.html'), 'utf8');
+  const first = manifest.events[0];
+  assert.deepEqual(first.files, [first.previews[0]]); assert.match(first.files[0], /^\.timeline-cache\//); assert.equal(first.pendingOriginals.length, 1); assert.equal(first.pendingOriginals[0].file, `materials/${path.basename(first.files[0])}`);
+  assert.doesNotMatch(await readFile(path.join(root, first.markdown), 'utf8'), /!\[画像/); assert.match(html, /原寸画像 未取得 <strong>2<\/strong>件/); assert.match(html, /id="resume-repair"/);
+  const progress = [], result = await repairWorkspaceMedia(root, { onProgress: update => progress.push(update) });
+  assert.deepEqual(result, { total: 2, repaired: 1 }); assert.deepEqual(progress.at(-1), { done: 2, total: 2, repaired: 1 });
+  manifest = JSON.parse(await readFile(path.join(root, 'manifest.json'), 'utf8')); html = await readFile(path.join(root, 'timeline.html'), 'utf8');
+  const [repairedEvent, failedEvent] = manifest.events;
+  assert.equal(repairedEvent.pendingOriginals, undefined); assert.match(repairedEvent.files[0], /^materials\//); assert.match((await readFile(path.join(root, repairedEvent.files[0]))).toString(), /\/o\/one\.png$/);
+  assert.match(await readFile(path.join(root, repairedEvent.markdown), 'utf8'), new RegExp(`!\\[画像1\\]\\(${path.basename(repairedEvent.files[0]).replace('.', '\\.')}\\)`));
+  assert.equal(failedEvent.pendingOriginals.length, 1); assert.match(failedEvent.files[0], /^\.timeline-cache\//); assert.match(html, /原寸画像 未取得 <strong>1<\/strong>件/);
+  hits.length = 0; await createWorkspace({ output: root, title: '行事', fromText: '2026-05-02', toText: '2026-05-02', events: [{ source: 'flickr', sourceId: 'p1', occurredAt: '2026-05-02T09:00:00+09:00', text: '一枚目', media: [{ url: `${base}/o/one.png`, previewUrl: `${base}/l/one.png`, deferOriginal: true }] }] });
+  assert.deepEqual(hits, []); assert.equal(JSON.parse(await readFile(path.join(root, 'manifest.json'), 'utf8')).events[0].pendingOriginals, undefined);
+});
+
+test('refreshes only outdated My Timeline workspaces in a directory', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'refresh-scan-')), events = [{ source: 'memo', sourceId: 'm1', occurredAt: '2026-06-16T10:00:00+09:00', text: 'メモ', media: [] }];
+  const make = async name => { const root = path.join(dir, name); await createWorkspace({ output: root, title: '旅行', fromText: '2026-06-16', toText: '2026-06-17', events }); return root; };
+  const outdated = await make('My Timeline 古い'), current = await make('My Timeline 新しい'), other = await make('別のフォルダ');
+  await writeFile(path.join(outdated, 'timeline.html'), 'old'); await writeFile(path.join(other, 'timeline.html'), 'old');
+  const currentHtml = await readFile(path.join(current, 'timeline.html'), 'utf8');
+  assert.deepEqual(await refreshOutdatedTimelines(dir), [outdated]);
+  assert.match(await readFile(path.join(outdated, 'timeline.html'), 'utf8'), new RegExp(`"renderVersion":"${RENDER_VERSION}"`));
+  assert.equal(await readFile(path.join(current, 'timeline.html'), 'utf8'), currentHtml);
+  assert.equal(await readFile(path.join(other, 'timeline.html'), 'utf8'), 'old');
 });

@@ -14,9 +14,15 @@ export async function collectFlickr({ fromText, toText, limit, apiKey, apiSecret
     const location = photo.latitude && photo.longitude ? { latitude: photo.latitude, longitude: photo.longitude } : null, flickrTakenTimeZone = location ? timeZoneAt(location) : null;
     const flickrTakenOffset = location ? null : await getFlickrExifOffset(photo, { apiKey, apiSecret, oauthToken, oauthTokenSecret, restUrl });
     const occurredAt = flickrTakenOffset ? offsetDateTimeToIso(photo.datetaken, flickrTakenOffset) : localDateTimeToIso(photo.datetaken, flickrTakenTimeZone ?? 'Asia/Tokyo');
-    return { source: 'flickr', sourceId: String(photo.id), occurredAt, flickrTakenLocal: photo.datetaken.replace(' ', 'T'), flickrTakenTimeZone, flickrTakenOffset, flickrTimeAssumedJapan: !location && !flickrTakenOffset, text: [photo.title, photo.description?._content].filter(Boolean).join('\n\n'), originalUrl: `https://www.flickr.com/photos/${photo.owner}/${photo.id}`, tags: String(photo.tags ?? '').split(' ').filter(Boolean), location, media: [{ url: photo.url_o }].filter(x => x.url), raw: photo };
+    return { source: 'flickr', sourceId: String(photo.id), occurredAt, flickrTakenLocal: photo.datetaken.replace(' ', 'T'), flickrTakenTimeZone, flickrTakenOffset, flickrTimeAssumedJapan: !location && !flickrTakenOffset, text: [photo.title, photo.description?._content].filter(Boolean).join('\n\n'), originalUrl: `https://www.flickr.com/photos/${photo.owner}/${photo.id}`, tags: String(photo.tags ?? '').split(' ').filter(Boolean), location, media: flickrMedia(photo), raw: photo };
   });
   return inheritPreviousTimeZone(events);
+}
+
+export function flickrMedia(photo) {
+  const previewUrl = photo.url_l ?? photo.url_c ?? photo.url_m;
+  if (photo.url_o && previewUrl) return [{ url: photo.url_o, previewUrl, deferOriginal: true }];
+  const url = photo.url_o ?? previewUrl; return url ? [{ url }] : [];
 }
 
 export function inheritPreviousTimeZone(events) {

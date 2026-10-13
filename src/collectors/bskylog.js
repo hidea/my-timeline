@@ -1,8 +1,17 @@
 import { McpClient, contentTexts } from '../lib/mcp.js';
 export async function collectBskylog({ from, to, limit, url, keyword = '' }) {
   const client = new McpClient(url); await client.initialize();
-  const result = await client.callTool('search_posts', { keyword, startDate: from.toISOString(), endDate: to.toISOString(), limit });
-  return contentTexts(result).map(parsePost).filter(Boolean);
+  if (!keyword) {
+    const result = await client.callTool('search_posts', { keyword, startDate: from.toISOString(), endDate: to.toISOString(), limit });
+    return contentTexts(result).map(parsePost).filter(Boolean);
+  }
+  const pattern = keywordPattern(keyword);
+  const result = await client.callTool('search_posts', { pattern, startDate: from.toISOString(), endDate: to.toISOString(), limit: 100_000 });
+  return contentTexts(result).map(parsePost).filter(post => post && new Date(post.occurredAt) >= from && new Date(post.occurredAt) <= to).slice(0, limit);
+}
+export function keywordPattern(keyword) {
+  const body = [...keyword].map(char => /[A-Za-z]/.test(char) ? `[${char.toUpperCase()}${char.toLowerCase()}]` : char.replace(/[\\^$.*+?()[\]{}|/]/g, '\\$&')).join('');
+  return /^[A-Za-z0-9]/.test(keyword) ? `(?<![A-Za-z0-9])${body}` : body;
 }
 function parsePost(text) {
   const field = name => text.match(new RegExp(`^${name}:\\s*(.*)$`, 'mi'))?.[1]?.trim();

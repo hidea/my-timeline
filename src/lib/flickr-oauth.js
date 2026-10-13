@@ -24,23 +24,35 @@ export function signedUrl(url, query, { key, secret, token, tokenSecret }) {
   return `${url}?${new URLSearchParams(params)}`;
 }
 
+export function flickrAuthorizeUrl(token) { return `https://www.flickr.com/services/oauth/authorize?oauth_token=${enc(token)}&perms=read`; }
+
+export async function requestFlickrToken({ key, secret, callbackUrl }) {
+  const params = { ...oauthParams(key), oauth_callback: callbackUrl };
+  params.oauth_signature = signOAuth('GET', requestTokenUrl, params, secret);
+  const data = await fetchForm(`${requestTokenUrl}?${new URLSearchParams(params)}`);
+  const token = data.get('oauth_token'), tokenSecret = data.get('oauth_token_secret');
+  if (!token || !tokenSecret) throw new Error('Flickr did not return a request token.');
+  return { token, tokenSecret };
+}
+
+export async function exchangeFlickrToken({ key, secret, token, tokenSecret, verifier }) {
+  const params = { ...oauthParams(key, token), oauth_verifier: verifier };
+  params.oauth_signature = signOAuth('GET', accessTokenUrl, params, secret, tokenSecret);
+  const data = await fetchForm(`${accessTokenUrl}?${new URLSearchParams(params)}`);
+  const accessToken = data.get('oauth_token'), accessSecret = data.get('oauth_token_secret'), userId = data.get('user_nsid');
+  if (!accessToken || !accessSecret) throw new Error('Flickr did not return an access token.');
+  return { FLICKR_OAUTH_TOKEN: accessToken, FLICKR_OAUTH_TOKEN_SECRET: accessSecret, ...(userId ? { FLICKR_USER_ID: userId } : {}) };
+}
+
 export async function authorizeFlickr({ key, secret, envFile = '.env' }) {
   const callback = await createCallback();
   try {
-    const requestParams = { ...oauthParams(key), oauth_callback: callback.url };
-    requestParams.oauth_signature = signOAuth('GET', requestTokenUrl, requestParams, secret);
-    const requestData = await fetchForm(`${requestTokenUrl}?${new URLSearchParams(requestParams)}`);
-    const requestToken = requestData.get('oauth_token'), requestSecret = requestData.get('oauth_token_secret');
-    if (!requestToken || !requestSecret) throw new Error('Flickr did not return a request token.');
-    spawn('open', [`https://www.flickr.com/services/oauth/authorize?oauth_token=${enc(requestToken)}&perms=read`], { detached: true, stdio: 'ignore' }).unref();
+    const request = await requestFlickrToken({ key, secret, callbackUrl: callback.url });
+    spawn('open', [flickrAuthorizeUrl(request.token)], { detached: true, stdio: 'ignore' }).unref();
     const verifier = await callback.waitForVerifier;
-    const accessParams = { ...oauthParams(key, requestToken), oauth_verifier: verifier };
-    accessParams.oauth_signature = signOAuth('GET', accessTokenUrl, accessParams, secret, requestSecret);
-    const accessData = await fetchForm(`${accessTokenUrl}?${new URLSearchParams(accessParams)}`);
-    const token = accessData.get('oauth_token'), tokenSecret = accessData.get('oauth_token_secret'), userId = accessData.get('user_nsid');
-    if (!token || !tokenSecret) throw new Error('Flickr did not return an access token.');
-    await updateEnv(envFile, { FLICKR_OAUTH_TOKEN: token, FLICKR_OAUTH_TOKEN_SECRET: tokenSecret, ...(userId ? { FLICKR_USER_ID: userId } : {}) });
-    return { userId };
+    const updates = await exchangeFlickrToken({ key, secret, ...request, verifier });
+    await updateEnv(envFile, updates);
+    return { userId: updates.FLICKR_USER_ID };
   } finally { callback.close(); }
 }
 

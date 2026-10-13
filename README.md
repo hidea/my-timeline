@@ -37,7 +37,7 @@ My Timelineはローカルの固定アドレス `http://127.0.0.1:4177/` で動�
 - 初回にプロジェクトフォルダで `npm install`
 - 出力先は通常 `~/Downloads/My Timeline ...`。ブラウザ画面は `http://127.0.0.1:4177/` を使用
 
-取得元はすべて設定する必要はありません。使うものだけ準備して、収集画面でチェックを入れます。GmailとStravaは起動後の設定画面から資格情報を保存できます。Flickrなどをファイルで設定する場合は、プロジェクト直下に `.env` を作り、`.env.example` を参考に値を記入します。`export` は付けません。
+取得元はすべて設定する必要はありません。使うものだけ準備して、収集画面でチェックを入れます。Flickr・Strava・Gmailは起動後の設定画面から資格情報を保存できます。ファイルで設定する場合は、プロジェクト直下に `.env` を作り、`.env.example` を参考に値を記入します。`export` は付けません。
 
 ```dotenv
 FLICKR_API_KEY="実際の値"
@@ -61,21 +61,21 @@ FLICKR_USER_ID="24796462@N08"
 - My Timelineは既定で `https://twilog-mcp.togetter.dev/mcp` へ接続します。
 - 初回または認証期限切れ時はブラウザが開くので、Twilog側で認証します。ターミナルへ認証コードを入力する必要はありません。
 - 通常は `.env` 設定不要です。Bearerトークンを直接使う場合だけ `TWILOG_MCP_TOKEN` を設定します。
+- 認証画面に「Unknown OAuth client」と出る場合は、Twilog側で以前の登録が無効になっています。My Timeline下部の「Twilog設定」で「Twilogの認証をやり直す」を押してから収集し直すと、認証からやり直せます。古い認証情報は `~/.mcp-auth/backup-twilog-日時/` に移されます。
 
 ### Flickr
 
-公開写真だけなら次の2項目が必要です。
+1. [Flickr App Garden](https://www.flickr.com/services/apps/create/)でアプリを作成し、KeyとSecretを確認します。
+2. My Timeline下部の「Flickr設定」にAPI KeyとユーザーID（例: `24796462@N08`）を入力して保存します。公開写真だけならここまでで使えます。
+3. 非公開・限定公開写真も含める場合は、Secretも入力して保存し、「Flickrに接続」を押してブラウザで読み取りを許可します。
 
-- `FLICKR_API_KEY`: [Flickr App Garden](https://www.flickr.com/services/apps/create/)で取得したKey
-- `FLICKR_USER_ID`: FlickrのユーザーID（例: `24796462@N08`）
-
-非公開・限定公開写真も含める場合は、同じ画面で表示されるSecretも `.env` の `FLICKR_API_SECRET` に保存します。その後、一度だけ次を実行するとブラウザでFlickrの読み取り許可画面が開きます。
+ターミナルから設定する場合は、`.env` に `FLICKR_API_KEY`・`FLICKR_API_SECRET`・`FLICKR_USER_ID` を書き、次を実行します。
 
 ```sh
 node --env-file=.env src/cli.js flickr-auth
 ```
 
-成功すると `FLICKR_OAUTH_TOKEN`、`FLICKR_OAUTH_TOKEN_SECRET`、ユーザーIDが `.env` に自動追記されます。既存のFlickr Downloadrの暗号化資格情報は読みません。Flickrは通信制限が厳しいため、原寸画像の保存には長時間かかる場合があります。未保存画像は、既存タイムラインの「素材を追加」からFlickrを再実行すると補完されます。
+接続に成功すると `FLICKR_OAUTH_TOKEN`、`FLICKR_OAUTH_TOKEN_SECRET`、ユーザーIDが `.env` に自動追記されます。既存のFlickr Downloadrの暗号化資格情報は読みません。Flickrは通信制限が厳しいため、原寸画像の保存には長時間かかる場合があります。未保存画像は、既存タイムラインの「素材を追加」からFlickrを再実行すると補完されます。
 
 ### Strava
 
@@ -106,7 +106,7 @@ node --env-file=.env src/cli.js flickr-auth
 1. 必要ならbskylogを先に起動します。
 2. `My Timeline.command` をダブルクリックします。
 3. ブラウザで `http://127.0.0.1:4177/` が開くことを確認します。
-4. Strava・Gmailを使う場合は画面下部が「接続済み」になっていることを確認します。
+4. Flickr・Strava・Gmailを使う場合は、画面下部の各設定が「接続済み」（Flickrの公開写真だけなら「公開写真のみ」）になっていることを確認します。
 
 起動しない場合は、すでに別のMy Timelineが動いていないか確認してください。標準ポートは4177で、二重起動は想定していません。
 
@@ -132,7 +132,7 @@ node --env-file-if-exists=.env src/cli.js collect \
 生成物:
 
 - `materials/`: 日時順のMarkdownと画像
-- `timeline.html`: 検索・ソース絞り込み付き一覧
+- `timeline.html`: 日別表示、検索、取得元の絞り込み（複数選択）、ルートと撮影地点の地図（この日／全期間）付き一覧
 - `manifest.json`: 一時ワークスペースの索引
 
 MCPのツール定義は次で確認できます。

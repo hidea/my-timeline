@@ -51,6 +51,27 @@
         type="submit">収集して開く</button>
     </form>
     <details class="settings">
+      <summary>Twilog設定 <span id="twilog-status">未確認</span></summary>
+      <p class="hint">X（Twilog）は初回の収集時にブラウザでTwilogの認証を行います。認証画面に「Unknown OAuth client」と出た場合は、下のボタンを押してから収集し直してください。保存済みの認証情報は退避フォルダへ移され、次回の収集で認証をやり直します。</p>
+      <button id="twilog-reset" class="danger" type="button">Twilogの認証をやり直す</button>
+      <p id="twilog-message" aria-live="polite"></p>
+    </details>
+    <details class="settings">
+      <summary>Flickr設定 <span id="flickr-status">未確認</span></summary>
+      <p class="hint"><a href="https://www.flickr.com/services/apps/create/" target="_blank">Flickr App Garden</a>で取得したKeyと、自分のユーザーID（例: <code>24796462@N08</code>）を保存します。公開写真だけならSecretは不要です。非公開・限定公開写真も含める場合はSecretも保存し、「Flickrに接続」で読み取りを許可します。</p>
+      <form id="flickr-form" action="/api/flickr/config" method="post">
+        <div class="field"><label for="flickr-api-key">API Key</label><input id="flickr-api-key" name="apiKey"
+            type="text" required autocomplete="off"></div>
+        <div class="field"><label for="flickr-api-secret">Secret（非公開写真も含める場合）</label><input id="flickr-api-secret"
+            name="apiSecret" type="password" autocomplete="off"></div>
+        <div class="field"><label for="flickr-user-id">ユーザーID</label><input id="flickr-user-id" name="userId"
+            type="text" required autocomplete="off" placeholder="24796462@N08"></div>
+        <button type="submit">設定を保存</button>
+      </form>
+      <a id="flickr-connect" class="connect" href="/api/flickr/connect" target="_blank" hidden>Flickrに接続</a>
+      <p id="flickr-message" aria-live="polite"></p>
+    </details>
+    <details class="settings">
       <summary>Strava設定 <span id="strava-status">未確認</span></summary>
       <p class="hint">初回のみ、<a href="https://www.strava.com/settings/api"
           target="_blank">StravaのAPI設定画面</a>で作成した値を保存します。Authorization Callback Domainは <code>127.0.0.1</code> にしてください。

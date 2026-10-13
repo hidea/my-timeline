@@ -17,7 +17,7 @@ export async function exchangeGmailCode({ code, clientId, clientSecret, redirect
 
 async function refreshAccessToken({ clientId, clientSecret, refreshToken }) {
   const response = await fetch(tokenEndpoint(), { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: 'refresh_token' }), signal: AbortSignal.timeout(30_000) });
-  const data = await response.json(); if (!response.ok) throw new Error(`Gmailトークンの更新に失敗しました (${response.status})。`); return data.access_token;
+  const data = await response.json(); if (data.error === 'invalid_grant') throw new Error('Gmailの認証が失効しています。画面下部の「Gmail設定」で「Gmailに再接続」を押してください。'); if (!response.ok) throw new Error(`Gmailトークンの更新に失敗しました (${response.status})。`); return data.access_token;
 }
 
 async function listMessages(token, query, limit) {
