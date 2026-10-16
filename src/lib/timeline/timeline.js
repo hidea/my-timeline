@@ -9,7 +9,13 @@ function filter() {
 }
 function updateDateBars() { for (const bar of dateBars) bar.hidden = !cards.some(card => !card.hidden && card.dataset.date === bar.dataset.date); }
 q.addEventListener('input', () => { filter(); updateDateBars(); renderDayView(); });
-for (const box of sourceBoxes) box.addEventListener('change', () => { filter(); updateDateBars(); renderDayView(); });
+const sourceCount = document.querySelector('#source-count');
+function updateSourceCount() { const on = sourceBoxes.filter(box => box.checked).length; sourceCount.textContent = on === sourceBoxes.length ? '' : `${on}/${sourceBoxes.length}`; }
+for (const box of sourceBoxes) box.addEventListener('change', () => { updateSourceCount(); filter(); updateDateBars(); renderDayView(); });
+const menus = [...document.querySelectorAll('.controls details.menu')];
+document.addEventListener('click', event => { for (const menu of menus) if (menu.open && !menu.contains(event.target)) menu.open = false; });
+for (const button of document.querySelectorAll('.more-menu button')) button.addEventListener('click', () => { button.closest('details').open = false; });
+document.addEventListener('click', event => { const link = event.target.closest?.('.jump-start'); if (!link) return; event.preventDefault(); showCard(link.dataset.key, link.dataset.date); });
 
 const mapFrames = [...document.querySelectorAll('main iframe[data-src],main iframe[data-srcdoc]')], mapFrameObserver = new IntersectionObserver(entries => {
   for (const entry of entries) {
@@ -30,12 +36,11 @@ for (const c of cards) {
   if (!data.root) continue;
   const box = document.createElement('input');
   box.type = 'checkbox'; box.className = 'card-select'; box.dataset.id = c.dataset.key; box.setAttribute('aria-label', 'このカードを選択');
-  box.style.cssText = 'width:22px;height:22px;min-width:22px;padding:0;accent-color:#a32121';
-  shell.append(box); box.addEventListener('change', updateSelected);
+  c.querySelector('footer').prepend(box); box.addEventListener('change', updateSelected);
 }
 function updateSelected() {
   const count = document.querySelectorAll('.card-select:checked').length;
-  deleteButton.disabled = !count; deleteButton.textContent = count ? count + '件を削除…' : '選択したカードを削除';
+  deleteButton.hidden = !count; deleteButton.textContent = `${count}件を削除…`;
 }
 if (data.root) {
   selectedButton.addEventListener('click', () => {
@@ -68,7 +73,9 @@ window.addEventListener('message', event => {
 function showCard(key, date) {
   if (isFiltering() || date !== activeDay) chooseDay(date);
   const card = cards.find(c => c.dataset.key === key);
-  if (card) { card.scrollIntoView({ block: 'center' }); card.focus({ preventScroll: true }); }
+  if (!card) return;
+  card.scrollIntoView({ block: 'center' }); card.focus({ preventScroll: true });
+  requestAnimationFrame(() => requestAnimationFrame(() => card.scrollIntoView({ block: 'center' })));
 }
 if (overview.panel) {
   overview.panel.addEventListener('toggle', refreshOverviewMap);
@@ -79,7 +86,7 @@ if (overview.panel) {
   });
 }
 
-const mainElement = document.querySelector('main'), previousDayButton = document.querySelector('#previous-day'), nextDayButton = document.querySelector('#next-day'), dayStatus = document.querySelector('#day-status');
+const mainElement = document.querySelector('main'), previousDayButton = document.querySelector('#previous-day'), nextDayButton = document.querySelector('#next-day');
 const dayGroups = dateBars.map((bar, index) => {
   const nodes = [bar], nextBar = dateBars[index + 1];
   let node = bar.nextSibling;
@@ -106,16 +113,16 @@ function renderDayView() {
       const matches = group.nodes.filter(node => node.matches?.('.event-shell') && !node.querySelector('.event').hidden);
       if (matches.length) dayMount.append(group.nodes[0], ...matches);
     }
-    dayStatus.textContent = '検索結果'; previousDayButton.disabled = true; nextDayButton.disabled = true;
+    day.value = ''; previousDayButton.disabled = true; nextDayButton.disabled = true;
   } else {
     const index = Math.max(0, dayGroups.findIndex(group => group.date === activeDay)), group = dayGroups[index];
     activeDay = group.date; day.value = activeDay; dayMount.append(...group.nodes);
-    dayStatus.textContent = group.nodes[0].textContent; previousDayButton.disabled = index === 0; nextDayButton.disabled = index === dayGroups.length - 1;
+    previousDayButton.disabled = index === 0; nextDayButton.disabled = index === dayGroups.length - 1;
   }
   if (overview.scope === 'day') refreshOverviewMap();
 }
 function chooseDay(date) {
-  activeDay = date; q.value = ''; for (const box of sourceBoxes) box.checked = true;
+  activeDay = date; q.value = ''; for (const box of sourceBoxes) box.checked = true; updateSourceCount();
   filter(); updateDateBars(); renderDayView(); window.scrollTo(0, 0);
 }
 previousDayButton.addEventListener('click', () => { const index = dayGroups.findIndex(group => group.date === activeDay); if (index > 0) chooseDay(dayGroups[index - 1].date); });

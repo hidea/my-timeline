@@ -139,38 +139,49 @@ async function persistentWorkspace(fromText, toText, title) {
 function markdownFor(event, mediaTargets) { return ['---', `source: ${event.source}`, `source_id: ${JSON.stringify(event.sourceId)}`, `occurred_at: ${event.occurredAt}`, `original_url: ${event.originalUrl ?? ''}`, '---', '', event.text ?? '', '', ...mediaTargets.map((f, i) => !f ? null : f.startsWith('http') ? `[画像${i + 1}](${f})` : `![画像${i + 1}](${f})`).filter(Boolean), event.originalUrl ? `\n[元の記録](${event.originalUrl})` : '', ''].join('\n'); }
 export function renderHtml(m) {
   const orderedEvents = inferDisplayTimeZones([...m.events].sort((a, b) => new Date(a.occurredAt) - new Date(b.occurredAt)), m.from, m.to);
-  const addLink = m.workspaceRoot ? `<p><a href="http://127.0.0.1:4177/add?root=${encodeURIComponent(m.workspaceRoot)}" style="display:inline-block;padding:10px 14px;border:1px solid currentColor;border-radius:8px;font-weight:700;text-decoration:none">＋ 素材を追加</a></p>` : '';
-  const head = `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(m.title)}</title><style>${timelineStyles}</style></head><body><h1>${escapeHtml(m.title)}</h1><p>${escapeHtml(m.from)}〜${escapeHtml(m.to)} · ${m.events.length}件</p>`;
-  if (!orderedEvents.length) return `${head}<main>${addLink}<p>該当する素材はありません。</p></main></body></html>`;
+  const addLink = m.workspaceRoot ? `<a class="add-link" href="http://127.0.0.1:4177/add?root=${encodeURIComponent(m.workspaceRoot)}">＋ 素材を追加</a>` : '';
+  const head = `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(m.title)}</title><style>${timelineStyles}</style></head><body><header class="page-header"><div><h1>${escapeHtml(m.title)}</h1><p>${escapeHtml(m.from)}〜${escapeHtml(m.to)} · ${m.events.length}件</p></div>${addLink}</header>`;
+  if (!orderedEvents.length) return `${head}<main><p>該当する素材はありません。</p></main></body></html>`;
   let previousDay = '';
   const cards = orderedEvents.map((e, i) => { const day = localDay(e.occurredAt), bar = day === previousDay ? '' : dateBarFor(day); previousDay = day; return `${bar}${cardFor(m, e, i)}`; }).join('\n');
-  const sources = [...new Set(m.events.map(e => e.source))].map(s => `<label><input type="checkbox" value="${escapeHtml(s)}" checked>${escapeHtml(s)}</label>`).join('');
-  const days = [...new Set(orderedEvents.map(e => localDay(e.occurredAt)))].map(day => `<option value="${day}">${day}</option>`).join('');
-  const selection = m.workspaceRoot ? '<div class="selection-controls" role="group" aria-label="カードの一括選択と削除"><button id="select-visible" type="button">表示中をすべて選択</button><button id="clear-selection" type="button">すべて外す</button><button id="delete-selection" type="button" disabled style="color:#a32121">選択したカードを削除</button></div>' : '';
-  const controls = `<div class="controls"><input id="q" type="search" placeholder="素材を検索"><fieldset class="source-filter"><legend>表示する取得元</legend>${sources}</fieldset><select id="day"><option value="">日付へ移動</option>${days}</select><div class="day-navigation" role="group" aria-label="表示する日を切り替え"><button id="previous-day" type="button">← 前の日</button><span id="day-status" class="day-status"></span><button id="next-day" type="button">次の日 →</button></div>${selection}<button id="image-size" type="button" aria-pressed="false">画像を大きく表示</button></div>`;
+  const sources = [...new Set(m.events.map(e => e.source))].map(s => `<label><input type="checkbox" value="${escapeHtml(s)}" checked>${sourceIconImage(s)}${escapeHtml(s)}</label>`).join('');
+  const days = [...new Set(orderedEvents.map(e => localDay(e.occurredAt)))].map(day => `<option value="${day}">${escapeHtml(dayLabel(day))}</option>`).join('');
+  const selection = m.workspaceRoot ? '<button id="select-visible" type="button">表示中をすべて選択</button><button id="clear-selection" type="button">すべて外す</button>' : '', deleteSelection = m.workspaceRoot ? '<button id="delete-selection" class="danger" type="button" hidden>選択したカードを削除</button>' : '';
+  const controls = `<div class="controls"><div class="day-navigation" role="group" aria-label="表示する日を切り替え"><button id="previous-day" type="button" aria-label="前の日" title="前の日">${svgIcon('chevron_left')}</button><select id="day" aria-label="表示する日"><option value="" hidden>検索結果</option>${days}</select><button id="next-day" type="button" aria-label="次の日" title="次の日">${svgIcon('chevron_right')}</button></div><input id="q" type="search" placeholder="検索" aria-label="素材を検索"><details class="menu source-menu"><summary>取得元<span id="source-count" class="menu-count"></span></summary><fieldset class="source-filter menu-panel"><legend>表示する取得元</legend>${sources}</fieldset></details><details class="menu more-menu"><summary aria-label="その他の操作" title="その他の操作">${svgIcon('more_horiz')}</summary><div class="menu-panel">${selection}<button id="image-size" type="button" aria-pressed="false">画像を大きく表示</button></div></details>${deleteSelection}</div>`;
   const map = overviewMapData(orderedEvents), mapPanel = map.points.length || map.routes.length ? `<details id="overview-map" class="overview-map"><summary>地図</summary><div class="overview-map-modes" role="group" aria-label="地図の表示範囲"><button type="button" data-scope="day" aria-pressed="true">この日</button><button type="button" data-scope="all" aria-pressed="false">全期間</button></div><iframe id="overview-map-frame" class="overview-map-frame" src="about:blank" data-srcdoc="${escapeHtml(overviewMapDocument())}" title="全体地図"></iframe></details>` : '';
   const pending = pendingOriginalCount(m), repairBanner = m.workspaceRoot && pending ? `<div class="repair-banner" role="status"><span>原寸画像 未取得 <strong>${pending}</strong>件（表示中は縮小画像です）</span><button id="resume-repair" type="button">補完を再開</button><span id="repair-message" aria-live="polite"></span></div>` : '';
   const initialDay = orderedEvents.some(event => localDay(event.occurredAt) === m.from) ? m.from : localDay(orderedEvents[0].occurredAt);
   const data = JSON.stringify({ root: m.workspaceRoot ?? null, renderVersion: RENDER_VERSION, initialDay, map }).replaceAll('<', '\\u003c');
-  return `${head}${controls}${repairBanner}${mapPanel}<main>${addLink}${cards}</main><script type="application/json" id="timeline-data">${data}</script><script>${timelineScript}</script></body></html>`;
+  return `${head}${controls}${repairBanner}${mapPanel}<main>${cards}</main><script type="application/json" id="timeline-data">${data}</script><script>${timelineScript}</script></body></html>`;
 }
-function dateBarFor(day) {
-  const label = new Intl.DateTimeFormat('ja-JP', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' }).format(new Date(`${day}T00:00:00+09:00`));
-  return `<h2 class="date-bar" data-date="${day}">${escapeHtml(label)}</h2>`;
-}
+function dayLabel(day) { return new Intl.DateTimeFormat('ja-JP', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' }).format(new Date(`${day}T00:00:00+09:00`)); }
+function dateBarFor(day) { return `<h2 class="date-bar" data-date="${day}">${escapeHtml(dayLabel(day))}</h2>`; }
 function cardFor(m, e, i) {
-  const textOnly = e.source === 'eml', files = textOnly ? [] : e.files ?? [], hasVisual = files.length || (!textOnly && e.routeGeometry?.coordinates?.length), colors = sourceColors(e.source), icon = sourceIcon(e.source);
-  const media = textOnly ? '' : `${routePlotFor(e)}${files.map((f, j) => f.startsWith('http') ? `<a href="${escapeHtml(f)}">画像を開く</a>` : `<a class="image-link" href="${escapeHtml(f)}" aria-label="元の大きさで画像を開く"><img src="${escapeHtml(e.previews?.[j] ?? f)}" alt="" ${i === 0 && j === 0 ? 'fetchpriority="high"' : 'loading="lazy"'}></a>`).join('')}`;
-  const iconImage = icon ? `<img src=".timeline-cache/icons/${icon}" alt="" width="24" height="24" style="display:inline-block;width:24px;height:24px;margin-inline-end:7px;vertical-align:middle;object-fit:contain">` : '';
-  return `<article tabindex="-1" class="event ${hasVisual ? 'has-media' : 'text-only'} ${i > 4 ? 'deferred' : ''}" style="background:${colors.light};background:light-dark(${colors.light},${colors.dark})" data-date="${localDay(e.occurredAt)}" data-source="${escapeHtml(e.source)}" data-key="${escapeHtml(eventKey(e))}" data-search="${escapeHtml((e.text ?? '').toLowerCase())}"><header><span>${iconImage}${escapeHtml(e.source)}</span></header><div class="body">${eventTextFor(e)}${routeProgressFor(e)}${e.routeGeometry ? '' : mapFor(e.location)}</div><div class="media">${media}</div><footer>${footerLinksFor(m, e)}${eventTimeFor(e)}</footer></article>`;
+  const textOnly = e.source === 'eml', goal = isStravaGoal(e), files = textOnly ? [] : e.files ?? [], hasVisual = files.length || (!textOnly && !goal && e.routeGeometry?.coordinates?.length);
+  const media = textOnly ? '' : `${goal ? '' : routePlotFor(e)}${files.map((f, j) => f.startsWith('http') ? `<a href="${escapeHtml(f)}">画像を開く</a>` : `<a class="image-link" href="${escapeHtml(f)}" aria-label="元の大きさで画像を開く"><img src="${escapeHtml(e.previews?.[j] ?? f)}" alt="" ${i === 0 && j === 0 ? 'fetchpriority="high"' : 'loading="lazy"'}></a>`).join('')}`;
+  return `<article tabindex="-1" class="event ${hasVisual ? 'has-media' : 'text-only'}${goal ? ' goal' : ''} ${i > 4 ? 'deferred' : ''}" style="--source-color:${sourceAccent(e.source)}" data-date="${localDay(e.occurredAt)}" data-source="${escapeHtml(e.source)}" data-key="${escapeHtml(eventKey(e))}" data-search="${escapeHtml((e.text ?? '').toLowerCase())}"><header>${sourceIcon(e.source) ? `<img class="source-icon" src=".timeline-cache/icons/${sourceIcon(e.source)}" alt="${escapeHtml(e.source)}" title="${escapeHtml(e.source)}" width="30" height="30">` : `<span>${escapeHtml(e.source)}</span>`}</header><div class="body">${eventTextFor(e)}${routeProgressFor(e)}${goal ? goalLinkFor(m, e) : ''}${e.routeGeometry ? '' : mapFor(e.location)}</div><div class="media">${media}</div><footer>${footerLinksFor(m, e)}${eventTimeFor(e)}</footer></article>`;
 }
 function eventKey(event) { return `${event.source}:${event.sourceId}`; }
-function materialIcon(name) { return `<span class="material-symbols-rounded" aria-hidden="true">${name}</span>`; }
+function isStravaGoal(event) { return event.source === 'strava' && String(event.sourceId).endsWith(':end'); }
+function goalLinkFor(m, event) {
+  const startId = String(event.sourceId).replace(/:end$/, ':start'), start = m.events.find(item => item.source === 'strava' && item.sourceId === startId);
+  return start ? `<p class="goal-link"><a class="jump-start" href="#" data-key="${escapeHtml(eventKey(start))}" data-date="${localDay(start.occurredAt)}">▶ スタートへ</a></p>` : '';
+}
+const iconShapes = {
+  chevron_left: '<path d="M15 6l-6 6 6 6"/>',
+  chevron_right: '<path d="M9 6l6 6-6 6"/>',
+  more_horiz: '<circle cx="5" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.7" fill="currentColor" stroke="none"/>',
+  description: '<path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/><path d="M10 12h5M10 16h5"/>',
+  open_in_new: '<path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
+  delete: '<path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/>',
+  location_on: '<path d="M12 21s-6-5.5-6-11a6 6 0 0 1 12 0c0 5.5-6 11-6 11z"/><circle cx="12" cy="10" r="2.2"/>'
+};
+function svgIcon(name) { return `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${iconShapes[name]}</svg>`; }
 function footerLinksFor(m, e) {
   const links = [];
-  if (e.markdown) links.push(`<a href="${escapeHtml(e.markdown)}">${materialIcon('description')}記録</a>`);
-  if (e.originalUrl) links.push(`<a href="${escapeHtml(e.originalUrl)}">${materialIcon('open_in_new')}元ページ</a>`);
-  if (m.workspaceRoot) links.push(`<a href="http://127.0.0.1:4177/delete?${escapeHtml(new URLSearchParams({ root: m.workspaceRoot, source: e.source, sourceId: e.sourceId }))}" style="color:#a32121">${materialIcon('delete')}削除</a>`);
+  if (e.markdown) links.push(`<a href="${escapeHtml(e.markdown)}" aria-label="記録" title="記録">${svgIcon('description')}</a>`);
+  if (e.originalUrl) links.push(`<a href="${escapeHtml(e.originalUrl)}" aria-label="元ページ" title="元ページ">${svgIcon('open_in_new')}</a>`);
+  if (m.workspaceRoot) links.push(`<a class="danger" href="http://127.0.0.1:4177/delete?${escapeHtml(new URLSearchParams({ root: m.workspaceRoot, source: e.source, sourceId: e.sourceId }))}" aria-label="削除" title="削除">${svgIcon('delete')}</a>`);
   return links.join('');
 }
 function overviewMapDocument() {
@@ -188,9 +199,10 @@ function overviewMapData(events) {
   return { points, routes };
 }
 const iconFiles = ['bluesky.png', 'email.png', 'flickr.png', 'place.png', 'strava.png', 'whatsapp.png', 'x.png'];
-export async function copyTimelineIcons(root) { const cache = path.join(root, '.timeline-cache'), destination = path.join(cache, 'icons'); await ensureDir(destination); await Promise.all([...iconFiles.map(name => copyFile(new URL(`../../resources/${name}`, import.meta.url), path.join(destination, name))), copyFile(new URL('../../node_modules/material-symbols/material-symbols-rounded.woff2', import.meta.url), path.join(cache, 'material-symbols-rounded.woff2'))]); }
+export async function copyTimelineIcons(root) { const cache = path.join(root, '.timeline-cache'), destination = path.join(cache, 'icons'); await ensureDir(destination); await Promise.all(iconFiles.map(name => copyFile(new URL(`../../resources/${name}`, import.meta.url), path.join(destination, name)))); }
 function sourceIcon(source) { return ({ bluesky: 'bluesky.png', x: 'x.png', flickr: 'flickr.png', strava: 'strava.png', gmail: 'email.png', eml: 'email.png', place: 'place.png', whatsapp: 'whatsapp.png' })[source] ?? ''; }
-function sourceColors(source) { return ({ bluesky: { light: '#f1f8ff', dark: '#202b35' }, x: { light: '#f4f4f4', dark: '#242424' }, flickr: { light: '#fff3fa', dark: '#32242d' }, strava: { light: '#fff5ef', dark: '#352821' }, gmail: { light: '#fff8ed', dark: '#332e25' }, eml: { light: '#f5f2ff', dark: '#2b2738' }, memo: { light: '#fffdf2', dark: '#302f25' }, place: { light: '#f1faf3', dark: '#223027' }, whatsapp: { light: '#f0fbf4', dark: '#203128' } })[source] ?? { light: '#ffffff', dark: '#26231f' }; }
+function sourceAccent(source) { return ({ bluesky: '#1185fe', x: '#555555', flickr: '#d6006f', strava: '#fc4c02', gmail: '#c5221f', eml: '#7b61c9', memo: '#b08900', place: '#17624a', whatsapp: '#1fa855' })[source] ?? '#9c9384'; }
+function sourceIconImage(source) { const icon = sourceIcon(source); return icon ? `<img class="source-icon" src=".timeline-cache/icons/${icon}" alt="" width="20" height="20">` : ''; }
 function eventTextFor(event) {
   const text = String(event.text ?? ''), full = escapeHtml(text).replaceAll('\n', '<br>');
   if (!['gmail', 'eml', 'memo'].includes(event.source)) return `<p>${full}</p>`;
@@ -272,7 +284,7 @@ function routePlotFor(event) {
   const route = JSON.stringify(coordinates.map(([lat, lon]) => [Number(lat), Number(lon)])).replaceAll('<', '\\u003c');
   const distance = (Number(event.routeGeometry.totalDistanceMeters) / 1000).toLocaleString('ja-JP', { maximumFractionDigits: 1 });
   const document = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${mapLibraryStyles}<style>html,body,#map{height:100%;margin:0}body{background:#edf1eb}.leaflet-container{font-family:system-ui,sans-serif}.legend{position:absolute;z-index:500;left:8px;bottom:20px;padding:5px 8px;border-radius:6px;background:#fffd;color:#222;font:12px system-ui,sans-serif;box-shadow:0 1px 5px #0004}</style></head><body><div id="map" aria-label="${escapeHtml(distance)} kmの走行ルート"></div><div class="legend"><span style="color:#17624a">●</span> スタート　<span style="color:#a32121">●</span> ゴール　${escapeHtml(distance)} km</div>${mapLibraryScripts}<script>const route=${route};const mapElement=document.querySelector('#map'),map=L.map(mapElement,{scrollWheelZoom:false});${mapBaseLayer}const line=L.polyline(route,{color:'#fc4c02',weight:5,opacity:.95,lineCap:'round',lineJoin:'round'}).addTo(map);L.circleMarker(route[0],{radius:7,color:'#fff',weight:2,fillColor:'#17624a',fillOpacity:1}).addTo(map).bindTooltip('スタート');L.circleMarker(route.at(-1),{radius:7,color:'#fff',weight:2,fillColor:'#a32121',fillOpacity:1}).addTo(map).bindTooltip('ゴール');let fittedWidth=0,fittedHeight=0;function fitRoute(){const {width,height}=mapElement.getBoundingClientRect();if(width<1||height<1||width===fittedWidth&&height===fittedHeight)return;fittedWidth=width;fittedHeight=height;requestAnimationFrame(()=>{map.invalidateSize();map.fitBounds(line.getBounds(),{padding:[40,40],maxZoom:15})})}new ResizeObserver(fitRoute).observe(mapElement);window.addEventListener('pageshow',fitRoute);fitRoute();</script></body></html>`;
-  return `<div class="route-map"><iframe src="about:blank" data-srcdoc="${escapeHtml(document)}" loading="lazy" title="Strava走行ルート（${escapeHtml(distance)} km）" style="display:block;box-sizing:border-box;width:100%;height:320px;border:1px solid #aaa;border-radius:12px;background:#edf1eb"></iframe><a href="${escapeHtml(event.originalUrl)}" style="display:inline-block;margin-top:6px">Stravaで開く</a></div>`;
+  return `<div class="route-map"><iframe src="about:blank" data-srcdoc="${escapeHtml(document)}" loading="lazy" title="Strava走行ルート（${escapeHtml(distance)} km）"></iframe></div>`;
 }
 function mapFor(location) {
   const lat = Number(location?.latitude), lon = Number(location?.longitude);
@@ -281,5 +293,5 @@ function mapFor(location) {
   const embed = `https://www.openstreetmap.org/export/embed.html?bbox=${encodeURIComponent(bbox)}&layer=mapnik&marker=${encodeURIComponent(`${lat},${lon}`)}`;
   const osmLink = `https://www.openstreetmap.org/?mlat=${encodeURIComponent(lat)}&mlon=${encodeURIComponent(lon)}#map=13/${encodeURIComponent(lat)}/${encodeURIComponent(lon)}`;
   const googleLink = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lon}`)}`;
-  return `<div class="map"><iframe src="about:blank" data-src="${escapeHtml(embed)}" loading="lazy" title="この記録の撮影場所"></iframe><a href="${escapeHtml(osmLink)}">OpenStreetMapで開く</a> · <a href="${escapeHtml(googleLink)}">Google Mapsで開く</a></div>`;
+  return `<details class="map"><summary>${svgIcon('location_on')}地図</summary><iframe src="about:blank" data-src="${escapeHtml(embed)}" loading="lazy" title="この記録の撮影場所"></iframe><p class="map-links"><a href="${escapeHtml(osmLink)}">OpenStreetMapで開く</a> · <a href="${escapeHtml(googleLink)}">Google Mapsで開く</a></p></details>`;
 }
