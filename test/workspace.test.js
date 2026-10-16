@@ -11,7 +11,7 @@ test('creates a disposable writing workspace', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'timeline-test-'));
   await createWorkspace({ output: root, title: '京都旅行', fromText: '2025-08-01', toText: '2025-08-02', events: [{ source: 'bluesky', sourceId: 'abc', occurredAt: '2025-08-01T09:00:00+09:00', text: '京都に着いた', media: [] }] });
   const manifest = JSON.parse(await readFile(path.join(root, 'manifest.json'))), html = await readFile(path.join(root, 'timeline.html'), 'utf8');
-  assert.equal(manifest.events.length, 1); assert.match(html, /京都に着いた/); assert.match(html, /content-visibility:auto/); assert.match(html, /icons\/bluesky\.png/); assert.match(html, /light-dark\(#f1f8ff,#202b35\)/);
+  assert.equal(manifest.events.length, 1); assert.match(html, /京都に着いた/); assert.match(html, /content-visibility:auto/); assert.match(html, /icons\/bluesky\.png/); assert.match(html, /style="--source-color:#1185fe"/); assert.doesNotMatch(html, /light-dark\(#f1f8ff/);
   assert.ok((await readFile(path.join(root, '.timeline-cache', 'icons', 'bluesky.png'))).length > 0);
   for (const name of ['itinerary.md', 'outline.md', 'draft.md', 'selected']) await assert.rejects(access(path.join(root, name)), { code: 'ENOENT' });
 });
@@ -31,11 +31,12 @@ test('renders date bars, time at bottom right, icon links, and outside card sele
     { source: 'bluesky', sourceId: 'two', occurredAt: '2026-05-03T09:00:00+09:00', text: '二日目', media: [] }
   ] });
   const html = await readFile(path.join(root, 'timeline.html'), 'utf8'), footer = html.match(/<footer>[\s\S]*?<\/footer>/)?.[0] ?? '';
-  assert.equal((html.match(/class="date-bar"/g) ?? []).length, 2); assert.match(html, /2026年5月2日\(土\)/); assert.match(html, /header>span\{order:-1\}/); assert.match(html, /shell\.append\(box\)/); assert.match(html, /\.event-shell\{position:relative\}/); assert.match(html, /\.card-select\{position:absolute/); assert.equal((footer.match(/class="material-symbols-rounded"/g) ?? []).length, 3); assert.match(footer, />description<|>open_in_new<|>delete</); assert.doesNotMatch(footer, /<svg|📝|↗|🗑| · /); assert.match(html, /footer a\{[^}]*text-decoration:none/); assert.ok((await readFile(path.join(root, '.timeline-cache', 'material-symbols-rounded.woff2'))).length > 0);
-  assert.match(footer, /<time class="event-time"/); assert.match(html, /\.event-time\{margin-inline-start:auto\}/); assert.match(html, /grid-template-areas:"meta text media" "meta links links"/); assert.match(html, /\.event\.text-only \.media:empty\{display:none\}/); assert.match(html, /class="selection-controls" role="group"/); assert.match(html, /\.event\.text-only\.deferred\{content-visibility:visible;contain-intrinsic-size:none\}/);
-  assert.match(html, /class="day-navigation" role="group"/); assert.match(html, /← 前の日/); assert.match(html, /次の日 →/); assert.match(html, /function renderDayView\(\)/); assert.match(html, /new DocumentFragment\(\)/);
-  assert.match(html, /\.event:has\(>\.media:not\(:empty\)\)\{grid-template-columns:132px minmax\(220px,1fr\) 420px\}/); assert.match(html, /\.event>\.media:not\(:empty\)\{grid-column:3;justify-self:end;inline-size:420px/);
-  assert.match(html, /\.event-time\{grid-area:links;align-self:end;z-index:1\}/);
+  assert.equal((html.match(/class="date-bar"/g) ?? []).length, 2); assert.match(html, /2026年5月2日\(土\)/); assert.match(html, /<option value="2026-05-02">2026年5月2日\(土\)<\/option>/); assert.match(html, /c\.querySelector\('footer'\)\.prepend\(box\)/); assert.doesNotMatch(html, /shell\.append\(box\)/); assert.match(html, /\.event-shell\{position:relative\}/); assert.doesNotMatch(html, /\.card-select\{position:absolute/); assert.match(html, /<header><img class="source-icon" src="\.timeline-cache\/icons\/bluesky\.png" alt="bluesky" title="bluesky" width="30" height="30"><\/header>/); assert.equal((footer.match(/<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"/g) ?? []).length, 3); assert.doesNotMatch(html, /material-symbols|>description<|>open_in_new<|>delete<|>chevron_left<|>more_horiz</); for (const label of ['記録', '元ページ', '削除']) assert.match(footer, new RegExp(`aria-label="${label}" title="${label}"><svg`)); assert.doesNotMatch(footer, /<\/svg>(記録|元ページ|削除)</); assert.doesNotMatch(footer, /📝|↗|🗑| · /); assert.match(html, /footer a\{[^}]*text-decoration:none/);
+  assert.match(footer, /<time class="event-time"/); assert.match(html, /\.event\.text-only\.deferred\{content-visibility:visible;contain-intrinsic-size:none\}/);
+  assert.match(html, /class="day-navigation" role="group"/); assert.match(html, /id="previous-day" type="button" aria-label="前の日"/); assert.match(html, /id="next-day" type="button" aria-label="次の日"/); assert.match(html, /function renderDayView\(\)/); assert.match(html, /new DocumentFragment\(\)/);
+  const more = html.match(/<details class="menu more-menu">[\s\S]*?<\/details>/)?.[0] ?? '';
+  for (const id of ['select-visible', 'clear-selection', 'image-size']) assert.match(more, new RegExp(`id="${id}"`));
+  assert.match(html, /<button id="delete-selection" class="danger" type="button" hidden>/); assert.doesNotMatch(more, /delete-selection/);
 });
 
 test('shows local time from card location together with Japan time', async () => {
@@ -138,8 +139,12 @@ test('renders multi-select source filters, card keys, and an overview map with d
     { source: 'bluesky', sourceId: 'post', occurredAt: '2026-05-03T10:00:00+09:00', text: '位置なし', media: [] }
   ] });
   const html = await readFile(path.join(root, 'timeline.html'), 'utf8'), data = JSON.parse(html.match(/<script type="application\/json" id="timeline-data">([\s\S]*?)<\/script>/)[1]);
-  assert.match(html, /<fieldset class="source-filter">/); for (const source of ['strava', 'flickr', 'bluesky']) assert.match(html, new RegExp(`<input type="checkbox" value="${source}" checked>`)); assert.doesNotMatch(html, /<select id="source">/);
+  assert.match(html, /<details class="menu source-menu"><summary>取得元<span id="source-count"/); assert.match(html, /<fieldset class="source-filter menu-panel">/); for (const source of ['strava', 'flickr', 'bluesky']) assert.match(html, new RegExp(`<input type="checkbox" value="${source}" checked>`)); assert.doesNotMatch(html, /<select id="source">/);
   assert.match(html, /data-key="flickr:photo&lt;1&gt;"/);
+  const card = key => html.match(new RegExp(`<article[^>]*data-key="${key}"[\\s\\S]*?</article>`))?.[0] ?? '', goal = card('strava:1:end');
+  assert.match(goal, /class="event text-only goal/); assert.doesNotMatch(goal, /route-map|<iframe/); assert.match(goal, /<a class="jump-start" href="#" data-key="strava:1:start" data-date="2026-05-02">▶ スタートへ<\/a>/);
+  assert.match(card('strava:1:start'), /class="route-map"/); assert.doesNotMatch(card('strava:1:start'), /Stravaで開く/);
+  assert.match(card('flickr:photo&lt;1&gt;'), /<details class="map"><summary>/); assert.doesNotMatch(card('flickr:photo&lt;1&gt;'), /<details class="map" open/);
   assert.match(html, /<details id="overview-map" class="overview-map">/); assert.match(html, /data-scope="day" aria-pressed="true">この日/); assert.match(html, /<iframe id="overview-map-frame"[^>]*data-srcdoc="[^"]*tiles\.openfreemap\.org/); assert.match(html, /data-scope="all" aria-pressed="false">全期間/);
   assert.equal(data.root, root); assert.equal(data.initialDay, '2026-05-02');
   assert.equal(data.map.routes.length, 1); assert.deepEqual(data.map.routes[0], { key: 'strava:1:start', date: '2026-05-02', coords: [[35, 139], [35.1, 139.2]] });
@@ -193,4 +198,11 @@ test('refreshes only outdated My Timeline workspaces in a directory', async () =
   assert.match(await readFile(path.join(outdated, 'timeline.html'), 'utf8'), new RegExp(`"renderVersion":"${RENDER_VERSION}"`));
   assert.equal(await readFile(path.join(current, 'timeline.html'), 'utf8'), currentHtml);
   assert.equal(await readFile(path.join(other, 'timeline.html'), 'utf8'), 'old');
+});
+
+test('keeps a Strava goal card without a start link when the start card is gone', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'timeline-goal-test-'));
+  await createWorkspace({ output: root, title: 'ライド', fromText: '2026-05-02', toText: '2026-05-02', events: [{ source: 'strava', sourceId: '1:end', occurredAt: '2026-05-02T10:00:00+09:00', text: '■ ゴール', originalUrl: 'https://www.strava.com/activities/1', media: [], routeGeometry: { coordinates: [[35, 139], [35.1, 139.2]], totalDistanceMeters: 10000 } }] });
+  const html = await readFile(path.join(root, 'timeline.html'), 'utf8');
+  assert.match(html, /class="event text-only goal/); assert.doesNotMatch(html, /class="jump-start"/); assert.doesNotMatch(html, /class="route-map"/);
 });
