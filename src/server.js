@@ -14,17 +14,18 @@ import { addManualMaterial } from './manual-material.js';
 import { appendSources } from './append-sources.js';
 import { bulkDeleteInfo, deleteTimelineEvent, deleteTimelineEvents, eventInfo } from './delete-event.js';
 import { importEmlFiles } from './import-eml.js';
+import { chooseFolder, exportPicks } from './lib/picks.js';
 import { repairTasks, repairWorkspaceMedia } from './lib/repair.js';
 import { RENDER_VERSION, refreshOutdatedTimelines, rerenderWorkspace } from './lib/workspace.js';
 
 const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const uiRoot = join(projectRoot, 'ui');
 const host = '127.0.0.1';
-const FILE_PAGE_ROUTES = new Set(['/api/refresh-timeline', '/api/repair-media', '/api/repair-status']), fileOrigin = { 'access-control-allow-origin': 'null' };
+const FILE_PAGE_ROUTES = new Set(['/api/refresh-timeline', '/api/repair-media', '/api/repair-status', '/api/export-picks']), fileOrigin = { 'access-control-allow-origin': 'null' };
 const SOURCES = ['bluesky', 'x', 'flickr', 'strava', 'gmail'];
 const assets = new Map([['/', ['index.html', 'text/html; charset=utf-8']], ['/add', ['add.html', 'text/html; charset=utf-8']], ['/delete', ['delete.html', 'text/html; charset=utf-8']], ['/delete-bulk', ['delete-bulk.html', 'text/html; charset=utf-8']], ['/app.js', ['app.js', 'text/javascript; charset=utf-8']], ['/add.js', ['add.js', 'text/javascript; charset=utf-8']], ['/delete.js', ['delete.js', 'text/javascript; charset=utf-8']], ['/delete-bulk.js', ['delete-bulk.js', 'text/javascript; charset=utf-8']], ['/style.css', ['style.css', 'text/css; charset=utf-8']]]);
 
-export function createAppServer({ openTarget = open, envFile = join(projectRoot, '.env'), runCollectJob = runCollect, runRepairJob = null, mcpAuthDir = defaultMcpAuthDir() } = {}) {
+export function createAppServer({ openTarget = open, envFile = join(projectRoot, '.env'), runCollectJob = runCollect, runRepairJob = null, mcpAuthDir = defaultMcpAuthDir(), chooseSaveFolder = chooseFolder } = {}) {
   let job = null, stravaState = null, gmailState = null;
   const pendingDeletes = new Map(), flickrRequests = new Map(), locks = new Map();
   const twilogAuth = () => ({ baseDir: mcpAuthDir, serverUrl: process.env.TWILOG_MCP_URL ?? defaultTwilogUrl });
@@ -35,9 +36,13 @@ export function createAppServer({ openTarget = open, envFile = join(projectRoot,
     locks.set(root, tail); tail.then(() => { if (locks.get(root) === tail) locks.delete(root); });
     return run;
   };
-  const repairs = new Map(), repairJob = runRepairJob ?? ((root, onProgress) => repairWorkspaceMedia(root, { onProgress, withLock: task => withWorkspaceLock(root, task) }));
+  const repairs = new Map(), repairProgress = new Map(), repairJob = runRepairJob ?? ((root, onProgress) => repairWorkspaceMedia(root, { onProgress, withLock: task => withWorkspaceLock(root, task) }));
   const startRepair = (root, onProgress = () => {}) => {
-    if (!repairs.has(root)) repairs.set(root, Promise.resolve().then(() => repairJob(root, onProgress)).finally(() => repairs.delete(root)));
+    if (!repairs.has(root)) {
+      const state = { done: 0, total: 0, repaired: 0, lastError: null, startedAt: new Date().toISOString(), lastSuccessAt: null }; repairProgress.set(root, state);
+      const report = update => { if (update.repaired > state.repaired) state.lastSuccessAt = new Date().toISOString(); Object.assign(state, update); onProgress(update); };
+      repairs.set(root, Promise.resolve().then(() => repairJob(root, report)).finally(() => repairs.delete(root)));
+    }
     return repairs.get(root);
   };
   const pendingRepairs = async root => repairTasks(JSON.parse(await readFile(join(root, 'manifest.json'), 'utf8'))).length;
@@ -91,7 +96,14 @@ export function createAppServer({ openTarget = open, envFile = join(projectRoot,
         if (updated) await withWorkspaceLock(root, () => rerenderWorkspace(root));
         json(response, 200, { updated }, fileOrigin); return;
       }
-      if (route === 'GET /api/repair-status') { const root = await workspaceRoot(url.searchParams.get('root')); json(response, 200, { pending: await pendingRepairs(root), running: repairs.has(root) }, fileOrigin); return; }
+      if (route === 'GET /api/repair-status') { const root = await workspaceRoot(url.searchParams.get('root')); json(response, 200, { pending: await pendingRepairs(root), running: repairs.has(root), ...repairProgress.get(root) }, fileOrigin); return; }
+      if (route === 'POST /api/export-picks') {
+        const body = await readJson(request, 5 * 1024 * 1024), root = await workspaceRoot(body.root);
+        if (!Array.isArray(body.files) || !body.files.length) throw httpError(400, '写真を選んでください。');
+        const folder = await chooseSaveFolder(); if (!folder) { json(response, 200, { cancelled: true }, fileOrigin); return; }
+        const result = await exportPicks(root, body.files, folder); await openTarget(folder).catch(() => {});
+        json(response, 200, result, fileOrigin); return;
+      }
       if (route === 'POST /api/repair-media') {
         const body = await readJson(request), root = await workspaceRoot(body.root), pending = await pendingRepairs(root);
         if (pending) startRepair(root).catch(() => {});

@@ -145,3 +145,28 @@ test('reports the remaining original images so the timeline can update its count
   assert.equal(response.headers.get('access-control-allow-origin'), 'null');
   assert.deepEqual(await response.json(), { pending: 2, running: false });
 });
+
+test('copies picked photos into the chosen folder and refuses paths outside the workspace', async t => {
+  const folder = await mkdtemp(path.join(tmpdir(), 'chosen-')); let chosen = folder;
+  const app = await startServer({ chooseSaveFolder: async () => chosen }); t.after(app.close);
+  const root = await outputWorkspace(); await writeFile(path.join(root, 'materials', 'a.jpg'), 'photo'); await writeFile(path.join(path.dirname(root), 'secret.txt'), 'secret');
+  const response = await fetch(`http://127.0.0.1:${app.server.address().port}/api/export-picks`, { method: 'POST', headers: { 'content-type': 'text/plain', origin: 'null' }, body: JSON.stringify({ root, files: ['materials/a.jpg', 'materials/none.jpg', '../secret.txt', 'manifest.json'] }) });
+  assert.equal(response.headers.get('access-control-allow-origin'), 'null');
+  const body = await response.json();
+  assert.equal(body.saved, 1); assert.deepEqual(body.failed, ['materials/none.jpg', '../secret.txt', 'manifest.json']);
+  assert.deepEqual(await readdir(folder), ['a.jpg']); assert.equal(await readFile(path.join(folder, 'a.jpg'), 'utf8'), 'photo');
+  assert.deepEqual(app.opened.at(-1), folder);
+  chosen = null;
+  assert.deepEqual((await app.request('/api/export-picks', { root, files: ['materials/a.jpg'] })).body, { cancelled: true });
+});
+
+test('reports repair progress, pace inputs and the last error while running', async t => {
+  let finish; const app = await startServer({ runRepairJob: async (root, onProgress) => { onProgress({ done: 2, total: 5, repaired: 1, lastError: 'Download failed (429)' }); await new Promise(resolve => { finish = resolve; }); } }); t.after(app.close);
+  const root = await outputWorkspace([{ source: 'memo', sourceId: 'm1', occurredAt: '2026-06-16T10:00:00+09:00', text: 'メモ', media: [] }]);
+  const manifestPath = path.join(root, 'manifest.json'), manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+  manifest.events[0].pendingOriginals = [{ index: 0, url: 'https://live.staticflickr.com/1/a_o.jpg', file: 'materials/a.jpg' }]; await writeFile(manifestPath, JSON.stringify(manifest));
+  await app.request('/api/repair-media', { root }); await new Promise(resolve => setTimeout(resolve, 20));
+  const status = (await app.request(`/api/repair-status?root=${encodeURIComponent(root)}`)).body;
+  assert.equal(status.running, true); assert.equal(status.done, 2); assert.equal(status.total, 5); assert.equal(status.repaired, 1); assert.equal(status.lastError, 'Download failed (429)'); assert.ok(status.startedAt); assert.ok(status.lastSuccessAt);
+  finish();
+});

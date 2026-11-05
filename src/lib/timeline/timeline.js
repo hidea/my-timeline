@@ -1,11 +1,30 @@
 const data = JSON.parse(document.querySelector('#timeline-data').textContent);
+for (const link of document.querySelectorAll('a[href^="http"]:not([href^="http://127.0.0.1:4177/"])')) { link.target = '_blank'; link.rel = 'noopener'; }
 const q = document.querySelector('#q'), day = document.querySelector('#day'), size = document.querySelector('#image-size');
 const sourceBoxes = [...document.querySelectorAll('.source-filter input')], cards = [...document.querySelectorAll('.event')], dateBars = [...document.querySelectorAll('.date-bar')];
 
-function isFiltering() { return !!q.value.trim() || sourceBoxes.some(box => !box.checked); }
+const picksKey = `my-timeline-picks:${document.title}`, picks = new Set();
+try { for (const href of JSON.parse(localStorage.getItem(picksKey) ?? '[]')) picks.add(href); } catch {}
+const pickedOnlyButton = document.querySelector('#picked-only'), downloadButton = document.querySelector('#download-picks');
+function updatePickCount() {
+  pickedOnlyButton.textContent = `${pickedOnlyButton.getAttribute('aria-pressed') === 'true' ? 'すべての写真を表示' : '選んだ写真だけ表示'}（${picks.size}枚）`;
+  downloadButton.textContent = `選んだ写真を保存（${picks.size}枚）`; downloadButton.disabled = !picks.size;
+}
+function savePicks() { try { localStorage.setItem(picksKey, JSON.stringify([...picks])); } catch {} updatePickCount(); }
+for (const link of document.querySelectorAll('.image-link')) {
+  const href = link.getAttribute('href'), photo = document.createElement('div'), button = document.createElement('button');
+  const save = document.createElement('button'); save.type = 'button'; save.className = 'save-one'; save.textContent = '↓'; save.title = 'この写真をダウンロード'; save.setAttribute('aria-label', 'この写真をダウンロード');
+  save.addEventListener('click', () => savePhotos([href]));
+  photo.className = 'photo'; link.before(photo); photo.append(link, save, button);
+  button.type = 'button'; button.className = 'pick'; button.setAttribute('aria-label', 'この写真を選ぶ');
+  const show = () => { const on = picks.has(href); button.textContent = on ? '★' : '☆'; button.setAttribute('aria-pressed', String(on)); };
+  show(); button.addEventListener('click', () => { if (picks.has(href)) picks.delete(href); else picks.add(href); show(); savePicks(); });
+}
+function pickedOnly() { return pickedOnlyButton.getAttribute('aria-pressed') === 'true'; }
+function isFiltering() { return !!q.value.trim() || sourceBoxes.some(box => !box.checked) || pickedOnly(); }
 function filter() {
   const n = q.value.toLowerCase(), sources = new Set(sourceBoxes.filter(box => box.checked).map(box => box.value));
-  for (const c of cards) c.hidden = !!((n && !c.dataset.search.includes(n)) || !sources.has(c.dataset.source));
+  for (const c of cards) c.hidden = !!((n && !c.dataset.search.includes(n)) || !sources.has(c.dataset.source) || (pickedOnly() && !c.querySelector('.pick[aria-pressed="true"]')));
 }
 function updateDateBars() { for (const bar of dateBars) bar.hidden = !cards.some(card => !card.hidden && card.dataset.date === bar.dataset.date); }
 q.addEventListener('input', () => { filter(); updateDateBars(); renderDayView(); });
@@ -28,6 +47,12 @@ const mapFrames = [...document.querySelectorAll('main iframe[data-src],main ifra
   }
 }, { rootMargin: '600px 0px' });
 for (const frame of mapFrames) mapFrameObserver.observe(frame);
+document.addEventListener('toggle', event => {
+  const details = event.target;
+  if (!details.matches?.('details.map') || !details.open || details.querySelector('iframe')) return;
+  const frame = document.createElement('iframe');
+  frame.src = details.dataset.embed; frame.title = 'この記録の撮影場所'; details.querySelector('summary').after(frame);
+}, true);
 
 const selectedButton = document.querySelector('#select-visible'), clearButton = document.querySelector('#clear-selection'), deleteButton = document.querySelector('#delete-selection');
 for (const c of cards) {
@@ -43,6 +68,7 @@ function updateSelected() {
   deleteButton.hidden = !count; deleteButton.textContent = `${count}件を削除…`;
 }
 if (data.root) {
+  updateSelected(); window.addEventListener('pageshow', updateSelected);
   selectedButton.addEventListener('click', () => {
     for (const box of document.querySelectorAll('.card-select')) { const shell = box.closest('.event-shell'); if (shell.isConnected && !shell.querySelector('.event').hidden) box.checked = true; }
     updateSelected();
@@ -95,6 +121,41 @@ const dayGroups = dateBars.map((bar, index) => {
 }), dayMount = document.createElement('div');
 dayMount.className = 'day-mount'; mainElement.append(dayMount);
 let activeDay = data.initialDay;
+const savedView = new URLSearchParams(location.hash.slice(1));
+if (dayGroups.some(group => group.date === savedView.get('day'))) activeDay = savedView.get('day');
+function rememberView(date, key) {
+  const params = new URLSearchParams({ day: date }), hidden = sourceBoxes.filter(box => !box.checked).map(box => box.value);
+  if (key) params.set('card', key);
+  if (q.value) params.set('q', q.value);
+  if (hidden.length) params.set('hidden', hidden.join(','));
+  if (document.body.classList.contains('large-images')) params.set('large', '1');
+  if (pickedOnly()) params.set('picked', '1');
+  const hash = `#${params}`; if (location.hash === hash) return;
+  try { history.replaceState(history.state, '', hash); } catch {}
+}
+const photoViewer = document.querySelector('#photo-viewer'), viewerImage = photoViewer.querySelector('img');
+photoViewer.addEventListener('click', () => photoViewer.close());
+document.querySelector('#viewer-save').addEventListener('click', () => savePhotos([viewerImage.dataset.file]));
+photoViewer.addEventListener('close', () => viewerImage.removeAttribute('src'));
+const recordViewer = document.querySelector('#record-viewer'), recordFrame = recordViewer.querySelector('iframe');
+recordViewer.querySelector('button').addEventListener('click', () => recordViewer.close());
+recordViewer.addEventListener('click', event => { if (event.target === recordViewer) recordViewer.close(); });
+recordViewer.addEventListener('close', () => recordFrame.removeAttribute('src'));
+function showRecord(link) { recordFrame.src = link.href; recordViewer.showModal(); }
+function showPhoto(link) {
+  const full = new Image(), href = link.href;
+  viewerImage.src = link.querySelector('img').src; photoViewer.showModal();
+  full.onload = () => { if (photoViewer.open && viewerImage.dataset.href === href) viewerImage.src = href; };
+  viewerImage.dataset.href = href; viewerImage.dataset.file = link.getAttribute('href'); full.src = href;
+}
+mainElement.addEventListener('click', event => {
+  const link = event.target.closest?.('a'), card = link?.closest('.event'); if (!card) return;
+  const popup = link.matches('.image-link,.record-link');
+  if (!popup) { rememberView(card.dataset.date, card.dataset.key); return; }
+  if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+  event.preventDefault();
+  if (link.matches('.image-link')) showPhoto(link); else showRecord(link);
+});
 const returnDayKey = 'my-timeline-return-day';
 function rememberDayForReturn() { try { localStorage.setItem(returnDayKey, JSON.stringify({ root: data.root, day: activeDay, at: Date.now() })); } catch {} }
 try {
@@ -113,10 +174,10 @@ function renderDayView() {
       const matches = group.nodes.filter(node => node.matches?.('.event-shell') && !node.querySelector('.event').hidden);
       if (matches.length) dayMount.append(group.nodes[0], ...matches);
     }
-    day.value = ''; previousDayButton.disabled = true; nextDayButton.disabled = true;
+    day.value = ''; previousDayButton.disabled = true; nextDayButton.disabled = true; rememberView(activeDay);
   } else {
     const index = Math.max(0, dayGroups.findIndex(group => group.date === activeDay)), group = dayGroups[index];
-    activeDay = group.date; day.value = activeDay; dayMount.append(...group.nodes);
+    activeDay = group.date; day.value = activeDay; dayMount.append(...group.nodes); rememberView(activeDay);
     previousDayButton.disabled = index === 0; nextDayButton.disabled = index === dayGroups.length - 1;
   }
   if (overview.scope === 'day') refreshOverviewMap();
@@ -148,18 +209,59 @@ resumeRepairButton?.addEventListener('click', async () => {
 });
 if (resumeRepairButton) {
   const pendingCount = resumeRepairButton.parentElement.querySelector('strong');
+  const repairProgress = document.querySelector('#repair-progress');
+  const minutesText = minutes => minutes < 60 ? `${Math.max(1, Math.round(minutes))}分` : `${Math.floor(minutes / 60)}時間${Math.round(minutes % 60)}分`;
+  const repairProgressText = state => {
+    if (!state.running) return state.lastError ? `止まっています。最後のエラー：${state.lastError.split(': http')[0]}` : '止まっています。「補完を再開」を押すと続きから取得します。';
+    const failed = state.done - state.repaired, parts = [`取得中 ${state.done}/${state.total}件（成功 ${state.repaired}、失敗 ${failed}）`];
+    const minutes = (Date.now() - new Date(state.startedAt)) / 60_000, pace = state.repaired / minutes;
+    if (state.repaired) parts.push(`1分あたり${pace.toFixed(1)}枚`, `残り約${minutesText(state.pending / pace)}`);
+    if (minutes >= 1) { const since = (Date.now() - new Date(state.lastSuccessAt ?? state.startedAt)) / 60_000; if (since >= 1) parts.push(state.lastSuccessAt ? `最後に取得できたのは${minutesText(since)}前` : `${minutesText(since)}のあいだ1枚も取得できていません`); }
+    if (state.lastError) parts.push(`最後のエラー：${state.lastError.split(': http')[0]}`);
+    return parts.join('　');
+  };
   const pollRepair = async () => {
     try {
       const result = await (await fetch(`http://127.0.0.1:4177/api/repair-status?root=${encodeURIComponent(pageRoot)}`)).json();
       if (!Number.isInteger(result.pending)) return;
       pendingCount.textContent = result.pending;
+      repairProgress.textContent = repairProgressText(result); resumeRepairButton.disabled = result.running;
       if (!result.pending) { resumeRepairButton.hidden = true; repairMessage.textContent = '補完が完了しました。再読み込みすると原寸画像で表示されます。'; clearInterval(repairTimer); }
-    } catch {}
+    } catch { repairProgress.textContent = 'My Timelineが起動していないので、取得は止まっています。'; resumeRepairButton.disabled = false; }
   };
   const repairTimer = setInterval(pollRepair, 5_000); pollRepair();
 }
 size.addEventListener('click', () => {
   const large = document.body.classList.toggle('large-images');
-  size.setAttribute('aria-pressed', String(large)); size.textContent = large ? '画像を小さく表示' : '画像を大きく表示';
+  size.setAttribute('aria-pressed', String(large)); size.textContent = large ? '画像を小さく表示' : '画像を大きく表示'; rememberView(activeDay);
 });
+pickedOnlyButton.addEventListener('click', () => { pickedOnlyButton.setAttribute('aria-pressed', String(!pickedOnly())); updatePickCount(); filter(); updateDateBars(); renderDayView(); window.scrollTo(0, 0); });
+const pickMessage = document.querySelector('#pick-message');
+async function saveWithServer(hrefs) {
+  const response = await fetch('http://127.0.0.1:4177/api/export-picks', { method: 'POST', headers: { 'content-type': 'text/plain' }, body: JSON.stringify({ root: pageRoot, files: hrefs }) }), result = await response.json();
+  if (!response.ok) throw new Error(result.error ?? `保存できませんでした（${response.status}）`);
+  if (result.cancelled) { pickMessage.textContent = ''; return; }
+  pickMessage.textContent = `${result.folder} に ${result.saved}枚保存しました。${result.failed.length ? `${result.failed.length}枚は保存できませんでした。` : ''}`;
+}
+async function savePhotos(hrefs) {
+  pickMessage.textContent = '保存先のフォルダを選んでください（Macの画面が開きます）';
+  try { await saveWithServer(hrefs); }
+  catch (error) { pickMessage.textContent = error.name === 'TypeError' ? 'My Timelineを起動してから押してください。' : `保存できませんでした：${error.message}`; }
+}
+downloadButton.addEventListener('click', () => savePhotos([...picks].sort()));
+if (savedView.get('picked')) pickedOnlyButton.setAttribute('aria-pressed', 'true');
+updatePickCount();
+q.value = savedView.get('q') ?? '';
+const hiddenSources = (savedView.get('hidden') ?? '').split(',');
+for (const box of sourceBoxes) box.checked = !hiddenSources.includes(box.value);
+if (savedView.get('large') && !document.body.classList.contains('large-images')) size.click();
+updateSourceCount(); filter(); updateDateBars();
 renderDayView();
+const returnCard = cards.find(card => card.dataset.key === savedView.get('card'));
+if (returnCard) {
+  history.scrollRestoration = 'manual';
+  const place = () => returnCard.scrollIntoView({ block: 'center' });
+  const settling = new ResizeObserver(place), stop = () => settling.disconnect();
+  settling.observe(dayMount); setTimeout(stop, 3_000);
+  for (const type of ['wheel', 'touchstart', 'keydown', 'mousedown']) window.addEventListener(type, stop, { once: true, passive: true });
+}

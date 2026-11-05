@@ -21,7 +21,7 @@ export function repairTasks(manifest) {
 export async function repairWorkspaceMedia(root, { onProgress = () => {}, withLock = task => task() } = {}) {
   const manifestPath = join(root, 'manifest.json'), load = async () => ({ ...JSON.parse(await readFile(manifestPath, 'utf8')), workspaceRoot: root });
   const tasks = repairTasks(await load());
-  let done = 0, repaired = 0, unrendered = 0;
+  let done = 0, repaired = 0, unrendered = 0, lastError = null;
   onProgress({ done, total: tasks.length, repaired });
   for (const task of tasks) {
     try {
@@ -40,8 +40,8 @@ export async function repairWorkspaceMedia(root, { onProgress = () => {}, withLo
         if (++unrendered >= 10) { await writeFile(join(root, 'timeline.html'), renderHtml(manifest)); unrendered = 0; }
       });
       repaired++;
-    } catch {}
-    onProgress({ done: ++done, total: tasks.length, repaired });
+    } catch (error) { lastError = error.message; }
+    onProgress({ done: ++done, total: tasks.length, repaired, lastError });
   }
   if (unrendered) await withLock(async () => writeFile(join(root, 'timeline.html'), renderHtml(await load())));
   return { total: tasks.length, repaired };
