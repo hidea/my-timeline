@@ -36,6 +36,7 @@ test('renders date bars, time at bottom right, icon links, and outside card sele
   assert.match(html, /class="day-navigation" role="group"/); assert.match(html, /id="previous-day" type="button" aria-label="前の日"/); assert.match(html, /id="next-day" type="button" aria-label="次の日"/); assert.match(html, /function renderDayView\(\)/); assert.match(html, /new DocumentFragment\(\)/);
   const more = html.match(/<details class="menu more-menu">[\s\S]*?<\/details>/)?.[0] ?? '';
   for (const id of ['select-visible', 'clear-selection', 'image-size']) assert.match(more, new RegExp(`id="${id}"`));
+  assert.match(html, /<dialog id="photo-viewer" closedby="any" aria-label="写真"><img alt=""><button id="viewer-save" type="button">この写真をダウンロード<\/button><button type="button" aria-label="閉じる"/); assert.match(html, /showPhoto\(link\)/); assert.match(html, /id="viewer-save"/); assert.match(html, /save\.className = 'save-one'/); assert.match(more, /id="picked-only"/); assert.match(more, /id="download-picks"/); assert.match(html, /<dialog id="record-viewer" closedby="any"/); assert.match(footer, /class="record-link"/); assert.match(html, /params\.set\('hidden'/); assert.match(html, /box\.checked = !hiddenSources\.includes\(box\.value\)/); assert.match(html, /link\.target = '_blank'; link\.rel = 'noopener'/);
   assert.match(html, /<button id="delete-selection" class="danger" type="button" hidden>/); assert.doesNotMatch(more, /delete-selection/);
 });
 
@@ -74,7 +75,7 @@ test('does not add a map when manual location fields are blank', async () => {
   await createWorkspace({ output: root, title: '旅行', fromText: '2026-06-16', toText: '2026-06-17', events: [] });
   await addManualMaterial(root, { source: 'memo', occurredAt: '2026-06-16T10:00', text: '位置なし', latitude: '', longitude: '', files: [] });
   const manifest = JSON.parse(await readFile(path.join(root, 'manifest.json'), 'utf8')), html = await readFile(path.join(root, 'timeline.html'), 'utf8');
-  assert.equal(manifest.events[0].location, null); assert.doesNotMatch(html, /撮影場所/); assert.match(html, /全文を表示／閉じる/);
+  assert.equal(manifest.events[0].location, null); assert.doesNotMatch(html, /data-embed=/); assert.match(html, /全文を表示／閉じる/);
 });
 
 test('renders Gmail and memo Markdown without allowing raw HTML or unsafe links', async () => {
@@ -144,7 +145,7 @@ test('renders multi-select source filters, card keys, and an overview map with d
   const card = key => html.match(new RegExp(`<article[^>]*data-key="${key}"[\\s\\S]*?</article>`))?.[0] ?? '', goal = card('strava:1:end');
   assert.match(goal, /class="event text-only goal/); assert.doesNotMatch(goal, /route-map|<iframe/); assert.match(goal, /<a class="jump-start" href="#" data-key="strava:1:start" data-date="2026-05-02">▶ スタートへ<\/a>/);
   assert.match(card('strava:1:start'), /class="route-map"/); assert.doesNotMatch(card('strava:1:start'), /Stravaで開く/);
-  assert.match(card('flickr:photo&lt;1&gt;'), /<details class="map"><summary>/); assert.doesNotMatch(card('flickr:photo&lt;1&gt;'), /<details class="map" open/);
+  assert.match(card('flickr:photo&lt;1&gt;'), /<details class="map" data-embed="https:\/\/www\.openstreetmap\.org\/export\/embed\.html/); assert.doesNotMatch(card('flickr:photo&lt;1&gt;'), /<iframe|<details class="map"[^>]* open/);
   assert.match(html, /<details id="overview-map" class="overview-map">/); assert.match(html, /data-scope="day" aria-pressed="true">この日/); assert.match(html, /<iframe id="overview-map-frame"[^>]*data-srcdoc="[^"]*tiles\.openfreemap\.org/); assert.match(html, /data-scope="all" aria-pressed="false">全期間/);
   assert.equal(data.root, root); assert.equal(data.initialDay, '2026-05-02');
   assert.equal(data.map.routes.length, 1); assert.deepEqual(data.map.routes[0], { key: 'strava:1:start', date: '2026-05-02', coords: [[35, 139], [35.1, 139.2]] });
@@ -178,7 +179,7 @@ test('builds the timeline from Flickr preview images first and fetches originals
   assert.deepEqual(first.files, [first.previews[0]]); assert.match(first.files[0], /^\.timeline-cache\//); assert.equal(first.pendingOriginals.length, 1); assert.equal(first.pendingOriginals[0].file, `materials/${path.basename(first.files[0])}`);
   assert.doesNotMatch(await readFile(path.join(root, first.markdown), 'utf8'), /!\[画像/); assert.match(html, /原寸画像 未取得 <strong>2<\/strong>件/); assert.match(html, /id="resume-repair"/);
   const progress = [], result = await repairWorkspaceMedia(root, { onProgress: update => progress.push(update) });
-  assert.deepEqual(result, { total: 2, repaired: 1 }); assert.deepEqual(progress.at(-1), { done: 2, total: 2, repaired: 1 });
+  assert.deepEqual(result, { total: 2, repaired: 1 }); assert.deepEqual({ ...progress.at(-1), lastError: undefined }, { done: 2, total: 2, repaired: 1, lastError: undefined }); assert.match(progress.at(-1).lastError, /Download failed \(404\)/);
   manifest = JSON.parse(await readFile(path.join(root, 'manifest.json'), 'utf8')); html = await readFile(path.join(root, 'timeline.html'), 'utf8');
   const [repairedEvent, failedEvent] = manifest.events;
   assert.equal(repairedEvent.pendingOriginals, undefined); assert.match(repairedEvent.files[0], /^materials\//); assert.match((await readFile(path.join(root, repairedEvent.files[0]))).toString(), /\/o\/one\.png$/);
